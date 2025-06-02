@@ -57,22 +57,24 @@ class MultiTurnEnv(Environment):
         super().__init__(**kwargs)
         self.system_prompt = system_prompt
         self.few_shot = few_shot
-        if dataset is not None:
-            self.dataset = format_dataset(
-                dataset=dataset,
-                system_prompt=self.system_prompt,
-                few_shot=self.few_shot
-            )
-        else:
-            self.dataset = None
-        if eval_dataset is not None:
-            self.eval_dataset = format_dataset(
-                dataset=eval_dataset,
-                system_prompt=self.system_prompt,
-                few_shot=few_shot
-            )
-        else:   
-            self.eval_dataset = None
+        self.dataset = dataset
+        self.eval_dataset = eval_dataset
+        # if dataset is not None:
+        #     self.dataset = format_dataset(
+        #         dataset=dataset,
+        #         system_prompt=self.system_prompt,
+        #         few_shot=self.few_shot
+        #     )
+        # else:
+        #     self.dataset = None
+        # if eval_dataset is not None:
+        #     self.eval_dataset = format_dataset(
+        #         dataset=eval_dataset,
+        #         system_prompt=self.system_prompt,
+        #         few_shot=few_shot
+        #     )
+        # else:   
+        #     self.eval_dataset = None
         self.sampling_args = {
             "skip_special_tokens": False,
             "spaces_between_special_tokens": False,

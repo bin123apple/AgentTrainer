@@ -13,7 +13,7 @@ def setup_logging(
     date_format: Optional[str] = None,
 ) -> None:
     """
-    Setup basic logging configuration for the verifiers package.
+    Setup basic logging configuration for the agenttrain package.
     
     Args:
         level: The logging level to use. Defaults to "INFO".
@@ -29,8 +29,8 @@ def setup_logging(
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter(fmt=log_format, datefmt=date_format))
 
-    # Get the root logger for the verifiers package
-    logger = logging.getLogger("verifiers")
+    # Get the root logger for the agenttrain package
+    logger = logging.getLogger("agenttrain")
     logger.setLevel(level.upper())
     logger.addHandler(handler)
 

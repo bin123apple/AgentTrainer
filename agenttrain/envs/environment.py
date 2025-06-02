@@ -12,7 +12,7 @@ class Environment(ABC):
     def __init__(self, **kwargs: Any):
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.logger = logging.getLogger(f"verifiers.envs.{self.__class__.__name__}")
+        self.logger = logging.getLogger(f"agenttrain.envs.{self.__class__.__name__}")
         self.tokenizer = None
         self.dataset = None
         self.eval_dataset = None

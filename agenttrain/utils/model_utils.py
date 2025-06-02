@@ -25,20 +25,20 @@ def get_model(
             attn_implementation="flash_attention_2",
             use_cache=False,
         )
-    if is_liger_available():
-        print("Using Liger kernel")
-        from liger_kernel.transformers import AutoLigerKernelForCausalLM  # type: ignore
-        return AutoLigerKernelForCausalLM.from_pretrained(
-            model_name,
-            cache_dir=cache_dir,
-            **model_kwargs,
-        )
-    else:
-        return AutoModelForCausalLM.from_pretrained(
-            model_name,
-            cache_dir=cache_dir,
-            **model_kwargs,
-        )
+    # if is_liger_available(): # disable this for now, as it does not support image inputs
+    #     print("Using Liger kernel")
+    #     from liger_kernel.transformers import AutoLigerKernelForCausalLM  # type: ignore
+    #     return AutoLigerKernelForCausalLM.from_pretrained(
+    #         model_name,
+    #         cache_dir=cache_dir,
+    #         **model_kwargs,
+    #     )
+    # else:
+    return AutoModelForCausalLM.from_pretrained(
+        model_name,
+        cache_dir=cache_dir,
+        **model_kwargs,
+    )
 
 def get_tokenizer(
     model_name: str,

@@ -1,0 +1,25 @@
+Metadata-Version: 2.4
+Name: AgentTrain
+Version: 0.1.0
+Summary: Verifiers for reinforcement learning with LLMs
+License: MIT
+Requires-Python: <3.13,>=3.11
+License-File: LICENSE
+Requires-Dist: torch==2.6.0
+Requires-Dist: setuptools
+Requires-Dist: deepspeed
+Requires-Dist: accelerate
+Requires-Dist: peft
+Requires-Dist: wandb
+Requires-Dist: rich
+Requires-Dist: duckduckgo-search
+Requires-Dist: trl==0.17
+Requires-Dist: liger-kernel
+Requires-Dist: brave-search
+Requires-Dist: latex2sympy>=1.0.3
+Requires-Dist: math-verify[antlr4-13-2]>=0.1.0
+Requires-Dist: pylatexenc>=2.10
+Requires-Dist: requests>=2.32.3
+Requires-Dist: smolagents>=1.15.0
+Requires-Dist: vllm>=0.8.5.post1
+Dynamic: license-file

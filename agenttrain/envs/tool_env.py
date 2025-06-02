@@ -5,11 +5,11 @@ import inspect
 from typing import List, Dict, Any, Callable
 
 from datasets import Dataset
-from tools import crop
+from agenttrain.tools import crop
 from PIL import Image
 from trainers.grpo_env_trainer import RewardFunc
 from envs.multiturn_env import MultiTurnEnv
-from parsers import XMLParser # rewrite this one
+from agenttrain.parsers import XMLParser # rewrite this one
 from agenttrain.prompts.system_prompts import CROP_TOOL_PROMPT_TEMPLATE 
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
 from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE

@@ -264,7 +264,7 @@ def llm_worker(
         # This is particularly useful here because we generate completions from the same prompts.
         enable_prefix_caching=script_args.enable_prefix_caching,
         max_model_len=script_args.max_model_len,
-        worker_extension_cls="verifiers.inference.vllm_serve.WeightSyncWorkerExtension",
+        worker_extension_cls="agenttrain.inference.vllm_serve.WeightSyncWorkerExtension",
     )
 
     # Send ready signal to parent process

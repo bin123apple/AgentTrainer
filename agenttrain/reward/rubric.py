@@ -10,7 +10,7 @@ def equals_reward_func(completions, answer, **kwargs) -> List[float]:
 
 class Rubric(ABC):
     def __init__(self, **kwargs):
-        self.logger = logging.getLogger(f"verifiers.parsers.{self.__class__.__name__}")
+        self.logger = logging.getLogger(f"agenttrain.parsers.{self.__class__.__name__}")
         self.parser = None
         for key, value in kwargs.items():
             setattr(self, key, value)
