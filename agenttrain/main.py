@@ -1,11 +1,12 @@
 from datasets import Dataset, load_from_disk
 from trl import GRPOConfig
-
+import torch
 from tools import crop
 from utils import preprocess_dataset, get_model_and_tokenizer
 from envs.tool_env import ToolEnv
 from trainers.grpo_env_trainer import GRPOEnvTrainer
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
+from transformers import AutoModelForCausalLM, Qwen2_5_VLForConditionalGeneration
 """
 Multi-GPU training (single node, 4 training + 4 inference)
 
@@ -126,6 +127,22 @@ def main():
         report_to="wandb",
         reward_weights=tool_env.get_reward_weights()
     )
+
+    # 保存原始方法并创建补丁
+    _original_from_pretrained = AutoModelForCausalLM.from_pretrained
+
+    def _vl_compatible_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
+        if isinstance(pretrained_model_name_or_path, str) and ("VL" in pretrained_model_name_or_path):
+            return Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                pretrained_model_name_or_path,
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                **kwargs
+            )
+        return _original_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+    # 应用补丁
+    AutoModelForCausalLM.from_pretrained = _vl_compatible_from_pretrained
     
     # 6. 初始化训练器
     print("5. 初始化训练器...")

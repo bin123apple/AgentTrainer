@@ -8,6 +8,7 @@ cd AgentTrain
 conda create --name agenttrain python=3.12
 conda activate agenttrain
 conda install -c conda-forge uv
+pip install flash-attn --no-build-isolation
 uv pip install -e .
 ```
 
