@@ -1,6 +1,8 @@
+import io
 import warnings
+from PIL import Image
 from typing import Callable, Optional, Union, Any, List
-
+from agenttrain.vlm_modules import VLMBaseModule
 from accelerate.utils import broadcast_object_list, gather, gather_object
 from datasets import Dataset, IterableDataset
 from peft import PeftConfig # type: ignore
@@ -13,11 +15,16 @@ from transformers import (
     TrainerCallback,
     is_wandb_available
 )
+from trl.models import create_reference_model
+from transformers.utils import is_peft_available
+if is_peft_available():
+    from peft import PeftConfig, get_peft_model
 RewardFunc = Union[str, PreTrainedModel, Callable[[list, list], list[float]]]
 from envs.environment import Environment
 from utils.logging_utils import print_prompt_completions_sample
 from vllm import LLM, SamplingParams
 from inference.vllm_client import VLLMClient
+from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 # monkey patch vllm client
 import trl.extras.vllm_client
@@ -63,6 +70,10 @@ class GRPOEnvTrainer(GRPOTrainer):
             callbacks: Optional[list[TrainerCallback]] = None,
             optimizers: tuple[Optional[torch.optim.Optimizer], Optional[torch.optim.lr_scheduler.LambdaLR]] = (None, None),
             peft_config: Optional["PeftConfig"] = None,
+            vlm_module: VLMBaseModule = None,
+            freeze_vision_modules: Optional[bool] = True,
+            attn_implementation: str = "flash_attention_2",
+            torch_dtype: str = "bfloat16",
             **kwargs,
     ):
         self.vllm_client = None
@@ -70,6 +81,103 @@ class GRPOEnvTrainer(GRPOTrainer):
             raise ValueError("vLLM must be enabled for GRPOEnvTrainer")
         if not (callable(reward_funcs) or (isinstance(reward_funcs, list) and all(callable(f) for f in reward_funcs))): 
             raise ValueError("reward_funcs must be a function or a list of functions. Use vLLM to host neural reward models.")
+        
+        if args is None:
+            model_name = model if isinstance(model, str) else model.config._name_or_path
+            model_name = model_name.split("/")[-1]
+            args = GRPOConfig(f"{model_name}-GRPO")
+        
+        self.vlm_module = vlm_module
+
+        # Models
+        model_init_kwargs = args.model_init_kwargs or {}
+        model_init_kwargs["attn_implementation"] = attn_implementation
+        if model_init_kwargs.get("torch_dtype") is None:
+            model_init_kwargs["torch_dtype"] = torch_dtype
+        
+        assert isinstance(model, str), "model must be a string in the current implementation"
+        model_id = model
+        torch_dtype = model_init_kwargs.get("torch_dtype")
+        if isinstance(torch_dtype, torch.dtype) or torch_dtype == "auto" or torch_dtype is None:
+            pass  # torch_dtype is already a torch.dtype or "auto" or None
+        elif isinstance(torch_dtype, str):  # it's a str, but not "auto"
+            torch_dtype = getattr(torch, torch_dtype)
+        else:
+            raise ValueError(
+                "Invalid `torch_dtype` passed to `GRPOConfig`. Expected either 'auto' or a string representing "
+                f"a `torch.dtype` (e.g., 'float32'), but got {torch_dtype}."
+            )
+        model_init_kwargs["use_cache"] = (
+            False if args.gradient_checkpointing else model_init_kwargs.get("use_cache")
+        )
+            # Disable caching if gradient checkpointing is enabled (not supported)
+        model_init_kwargs["use_cache"] = (
+            False if args.gradient_checkpointing else model_init_kwargs.get("use_cache")
+        )
+        model_cls = self.vlm_module.get_model_class(model_id, model_init_kwargs)
+        model = model_cls.from_pretrained(model_id, **model_init_kwargs)
+        
+        # LoRA
+        self.vision_modules_keywords = self.vlm_module.get_vision_modules_keywords()
+        if peft_config is not None:
+            def find_all_linear_names(model, multimodal_keywords):
+                cls = torch.nn.Linear
+                lora_module_names = set()
+                for name, module in model.named_modules():
+                    # LoRA is not applied to the vision modules
+                    if any(mm_keyword in name for mm_keyword in multimodal_keywords):
+                        continue
+                    if isinstance(module, cls):
+                        lora_module_names.add(name)
+                for m in lora_module_names:  # needed for 16-bit
+                    if "embed_tokens" in m:
+                        lora_module_names.remove(m)
+                return list(lora_module_names)
+            target_modules = find_all_linear_names(model, self.vision_modules_keywords)
+            peft_config.target_modules = target_modules
+            model = get_peft_model(model, peft_config)
+
+        # Freeze vision modules
+        if freeze_vision_modules:
+            print("Freezing vision modules...")
+            for n, p in model.named_parameters():
+                if any(keyword in n for keyword in self.vision_modules_keywords):
+                    p.requires_grad = False
+
+        # Enable gradient checkpointing if requested
+        if args.gradient_checkpointing:
+            model = self._enable_gradient_checkpointing(model, args)
+            
+        # Reference model
+        if is_deepspeed_zero3_enabled():
+            self.ref_model = model_cls.from_pretrained(model_id, **model_init_kwargs)
+        elif peft_config is None:
+            # If PEFT configuration is not provided, create a reference model based on the initial model.
+            self.ref_model = create_reference_model(model)
+        else:
+            # If PEFT is used, the reference model is not needed since the adapter can be disabled
+            # to revert to the initial model.
+            self.ref_model = None
+            
+        # Processing class
+        if processing_class is None:
+            processing_cls = self.vlm_module.get_processing_class()
+            processing_class = processing_cls.from_pretrained(model_id, trust_remote_code=model_init_kwargs.get("trust_remote_code", None))
+            for processing_keyword in self.vlm_module.get_custom_processing_keywords():
+                if processing_keyword in kwargs:
+                    setattr(processing_class, processing_keyword, kwargs[processing_keyword])
+            if getattr(processing_class, "tokenizer",  None) is not None:
+                print("Setting pad_token_id and eos_token from tokenizer...")
+                pad_token_id = processing_class.tokenizer.pad_token_id
+                processing_class.pad_token = pad_token_id
+                processing_class.eos_token = processing_class.tokenizer.eos_token_id
+            else:
+                print("Setting pad_token_id and eos_token from processing_class...")
+                assert isinstance(processing_class, PreTrainedTokenizerBase), "processing_class must be an instance of PreTrainedTokenizerBase if it has no tokenizer attribute"
+                pad_token_id = processing_class.pad_token_id
+
+        # self.vlm_module.post_model_init(model, processing_class)
+        # self.vlm_module.post_model_init(self.ref_model, processing_class)
         
         super().__init__(
             model=model,
@@ -100,15 +208,16 @@ class GRPOEnvTrainer(GRPOTrainer):
         # 1. 准备硬件设备、提取 prompt 与 image  #
         ############################################
         device = self.accelerator.device
-        prompts = [x["prompt"] for x in inputs]      # inputs[i]["prompt"] 是一个聊天历史的 message dict 列表
-        images = [x.get("image") for x in inputs]    # inputs[i] 中如果有 "image"，就拿出来，否则 None
+        # print(f'Keys in in put:{inputs[0].keys()}')
+        prompts = [x["question"] for x in inputs]      # inputs[i]["question"] 是一个聊天历史的 message dict 列表
+        images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]    # inputs[i] 中如果有 "image"，就拿出来，否则 None
         
         ##################################################
         # 2. 用 maybe_apply_chat_template 构造文本提示， #
         #    支持多模态也照常把文本部分拼好。         #
         ##################################################
         prompts_text = [
-            maybe_apply_chat_template(example, self.processing_class)["prompt"]
+            maybe_apply_chat_template(example, self.processing_class)["question"]
             for example in inputs
         ]
         #   - 这里的 maybe_apply_chat_template 会把 `example["prompt"]` 
@@ -409,6 +518,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         # 22. （可选）打印 / 上传样本到 WandB, 包含图像信息 #
         ##########################################
         if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
+            print("Logging completions...")
             prompts_to_log = gather_object(prompts)
             completions_to_log = gather_object(completions)
             images_to_log = gather_object(images)

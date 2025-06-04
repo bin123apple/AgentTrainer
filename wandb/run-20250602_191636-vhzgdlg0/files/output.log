@@ -1,0 +1,67 @@
+  0%|                                                                                      | 0/1000 [00:00<?, ?it/s]Traceback (most recent call last):
+Keys in in put:dict_keys(['width', 'height', 'image', 'question', 'answer'])
+  File "/home/lei00126/AgentTrainer/agenttrain/main.py", line 166, in <module>
+    main()
+  File "/home/lei00126/AgentTrainer/agenttrain/main.py", line 161, in main
+    trainer.train()
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2240, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2555, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 3739, in training_step
+    inputs = self._prepare_inputs(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/extras/profiling.py", line 87, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py", line 899, in _prepare_inputs
+    accumulated_local_batch = self._generate_and_score_completions(accumulated_local_batch)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/AgentTrainer/agenttrain/trainers/grpo_env_trainer.py", line 126, in _generate_and_score_completions
+    prompt_inputs = self.processing_class(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2867, in __call__
+    encodings = self._call_one(text=text, text_pair=text_pair, **all_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2955, in _call_one
+    return self.batch_encode_plus(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 3156, in batch_encode_plus
+    return self._batch_encode_plus(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PreTrainedTokenizerFast._batch_encode_plus() got an unexpected keyword argument 'images'
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/lei00126/AgentTrainer/agenttrain/main.py", line 166, in <module>
+[rank0]:     main()
+[rank0]:   File "/home/lei00126/AgentTrainer/agenttrain/main.py", line 161, in main
+[rank0]:     trainer.train()
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2240, in train
+[rank0]:     return inner_training_loop(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2555, in _inner_training_loop
+[rank0]:     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+[rank0]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 3739, in training_step
+[rank0]:     inputs = self._prepare_inputs(inputs)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/extras/profiling.py", line 87, in wrapper
+[rank0]:     return func(self, *args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py", line 899, in _prepare_inputs
+[rank0]:     accumulated_local_batch = self._generate_and_score_completions(accumulated_local_batch)
+[rank0]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/AgentTrainer/agenttrain/trainers/grpo_env_trainer.py", line 126, in _generate_and_score_completions
+[rank0]:     prompt_inputs = self.processing_class(
+[rank0]:                     ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2867, in __call__
+[rank0]:     encodings = self._call_one(text=text, text_pair=text_pair, **all_kwargs)
+[rank0]:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2955, in _call_one
+[rank0]:     return self.batch_encode_plus(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 3156, in batch_encode_plus
+[rank0]:     return self._batch_encode_plus(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]: TypeError: PreTrainedTokenizerFast._batch_encode_plus() got an unexpected keyword argument 'images'

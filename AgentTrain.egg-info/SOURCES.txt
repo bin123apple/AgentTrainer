@@ -8,3 +8,7 @@ AgentTrain.egg-info/requires.txt
 AgentTrain.egg-info/top_level.txt
 agenttrain/__init__.py
 agenttrain/main.py
+tests/test_gpu_communication.py
+tests/test_load_model.py
+tests/test_multimodal_grpo_trainer.py
+tests/test_prepare_prompt_input.py

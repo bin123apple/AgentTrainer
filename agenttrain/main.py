@@ -1,6 +1,7 @@
 from datasets import Dataset, load_from_disk
-from trl import GRPOConfig
+from trl import GRPOConfig, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 import torch
+from agenttrain.vlm_modules import *
 from tools import crop
 from utils import preprocess_dataset, get_model_and_tokenizer
 from envs.tool_env import ToolEnv
@@ -31,6 +32,14 @@ def load_processed_dataset(data_path: str) -> Dataset:
     dataset = load_from_disk(data_path)
     print(f"数据集加载完成，大小: {len(dataset)}")
     return dataset
+
+def get_vlm_module(model_name_or_path):
+    if "qwen" in model_name_or_path.lower():
+        return Qwen2VLModule
+    elif "internvl" in model_name_or_path.lower():
+        return InvernVLModule
+    else:
+        raise ValueError(f"Unsupported model: {model_name_or_path}")
 
 def main():
     """主函数"""
@@ -82,10 +91,13 @@ def main():
     # 4. 加载模型
     print("4. 加载模型...")
     model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
-    model, tokenizer = get_model_and_tokenizer(
-        model_name, 
-        cache_dir="/mnt/data1/huggingface/models"
-    )
+    # model, tokenizer = get_model_and_tokenizer(
+    #     model_name, 
+    #     cache_dir="/mnt/data1/huggingface/models"
+    # )
+    # Load the VLM module
+    vlm_module_cls = get_vlm_module(model_name)
+    print("using vlm module:", vlm_module_cls.__name__)
     
     # 5. 设置训练参数
     run_name = "VG-grpo_" + model_name.split("/")[-1].lower()
@@ -127,6 +139,14 @@ def main():
         report_to="wandb",
         reward_weights=tool_env.get_reward_weights()
     )
+    
+    model_args = ModelConfig(
+        use_peft = True,
+        lora_r = 64,
+        lora_alpha = 128,
+        lora_dropout = 0.05,
+        lora_task_type = "CAUSAL_LM"
+    )
 
     # 保存原始方法并创建补丁
     _original_from_pretrained = AutoModelForCausalLM.from_pretrained
@@ -147,13 +167,13 @@ def main():
     # 6. 初始化训练器
     print("5. 初始化训练器...")
     trainer = GRPOEnvTrainer(
-        model=model,
-        processing_class=tokenizer,
+        model=model_name,
         reward_funcs=tool_env.get_reward_funcs(),
         env=tool_env,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset
+        eval_dataset=eval_dataset,
+        vlm_module=vlm_module_cls(),
     )
     
     # 7. 开始训练

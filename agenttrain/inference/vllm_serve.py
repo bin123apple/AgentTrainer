@@ -87,31 +87,56 @@ class WeightSyncWorkerExtension:
 
         # The client process that sends updated weights has the highest rank (world_size - 1).
         self.client_rank = world_size - 1
-
+        
     def update_named_param(self, name: str, dtype: torch.dtype, shape: Sequence[int]) -> None:
         """
-        Receives updated weights from the client process and updates the named parameter in the model.
+        Receives updated weights from the client process and updates the named parameter in the vLLM model.
 
         Args:
             name (`str`):
-                Name of the weight tensor being updated.
+                Name of the weight tensor being updated（例如 "model.visual.patch_embed.proj.weight" 
+                或者 "language_model.embed_tokens.weight"）。
             dtype (`torch.dtype`):
-                Data type of the weight tensor (e.g., `torch.float32`).
+                数据类型（例如 torch.float32）。
             shape (`Sequence[int]`):
-                Shape of the weight tensor.
+                张量形状。
         """
         if self.pynccl_comm is None:
             raise RuntimeError("Communicator not initialized. Call `init_communicator` first.")
 
-        # Allocate memory for the incoming weight tensor on the correct device.
         weight = torch.empty(shape, dtype=dtype, device=self.device)
-
-        # Use NCCL to broadcast the updated weights from the client (src) to all workers.
         self.pynccl_comm.broadcast(weight, src=self.client_rank)
         self.pynccl_comm.group.barrier()
+        name = name.replace(".language_model","")
+        if 'visual' in name:
+            name = name.replace("model.","")
+        self.model_runner.model.load_weights(weights=[(name, weight)])  # type: ignore
 
-        # Load the received weights into the model.
-        self.model_runner.model.load_weights(weights=[(name, weight)]) # type: ignore
+
+    # def update_named_param(self, name: str, dtype: torch.dtype, shape: Sequence[int]) -> None:
+    #     """
+    #     Receives updated weights from the client process and updates the named parameter in the model.
+
+    #     Args:
+    #         name (`str`):
+    #             Name of the weight tensor being updated.
+    #         dtype (`torch.dtype`):
+    #             Data type of the weight tensor (e.g., `torch.float32`).
+    #         shape (`Sequence[int]`):
+    #             Shape of the weight tensor.
+    #     """
+    #     if self.pynccl_comm is None:
+    #         raise RuntimeError("Communicator not initialized. Call `init_communicator` first.")
+    #     print(">>> vLLM current keys:", list(self.model_runner.model.state_dict().keys()))
+    #     # Allocate memory for the incoming weight tensor on the correct device.
+    #     weight = torch.empty(shape, dtype=dtype, device=self.device)
+
+    #     # Use NCCL to broadcast the updated weights from the client (src) to all workers.
+    #     self.pynccl_comm.broadcast(weight, src=self.client_rank)
+    #     self.pynccl_comm.group.barrier()
+
+    #     # Load the received weights into the model.
+    #     self.model_runner.model.load_weights(weights=[(name, weight)]) # type: ignore
 
     def close_communicator(self) -> None:
         """
@@ -251,7 +276,7 @@ def llm_worker(
     os.environ["VLLM_DP_RANK_LOCAL"] = str(data_parallel_rank)
     os.environ["VLLM_DP_SIZE"] = str(script_args.data_parallel_size)
     os.environ["VLLM_DP_MASTER_PORT"] = str(master_port)
-
+    
     llm = LLM(
         model=script_args.model,
         revision=script_args.revision,

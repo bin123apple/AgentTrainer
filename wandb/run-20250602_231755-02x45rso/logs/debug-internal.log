@@ -1,0 +1,7 @@
+{"time":"2025-06-02T23:17:55.516331332Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/home/lei00126/AgentTrainer/wandb/run-20250602_231755-02x45rso/logs/debug-core.log"}
+{"time":"2025-06-02T23:17:55.815688798Z","level":"INFO","msg":"created new stream","id":"02x45rso"}
+{"time":"2025-06-02T23:17:55.815742369Z","level":"INFO","msg":"stream: started","id":"02x45rso"}
+{"time":"2025-06-02T23:17:55.815771339Z","level":"INFO","msg":"writer: Do: started","stream_id":"02x45rso"}
+{"time":"2025-06-02T23:17:55.8158092Z","level":"INFO","msg":"handler: started","stream_id":"02x45rso"}
+{"time":"2025-06-02T23:17:55.815887121Z","level":"INFO","msg":"sender: started","stream_id":"02x45rso"}
+{"time":"2025-06-02T23:17:56.082105528Z","level":"INFO","msg":"Starting system monitor"}
