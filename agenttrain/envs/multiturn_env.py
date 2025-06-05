@@ -111,7 +111,6 @@ class MultiTurnEnv(Environment):
         
         live_indices = [i for i, s in enumerate(states) if not s["completed"]]
         messages_to_step = [states[i]["messages"] for i in live_indices]
-
         if isinstance(llm, VLLMClient):
             llm_responses = llm.chat(
                 messages_to_step,
@@ -130,12 +129,20 @@ class MultiTurnEnv(Environment):
             llm_responses = dict_to_chat_response(llm_responses).responses
         else:
             llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False) # type: ignore
-
         #for i, j in enumerate(live_indices):
         def update_state(j, llm_response):
             # sleep for 0-1 seconds to avoid rate limiting
             time.sleep(self.sleep_time * random.random())
-
+            if j == 0:
+                print(f"Example response output: {llm_response}")
+            # # Add the stop reason to the response text and token ids if it exists
+            # for stop_reason in sampling_params.stop:
+            #     if llm_response.outputs[0].text.endswith(stop_reason):
+            #         tokenizer = llm.get_tokenizer()
+            #         stop_token_ids = tokenizer.encode(stop_reason, add_special_tokens=False)
+            #         llm_response.outputs[0].text += stop_reason
+            #         llm_response.outputs[0].token_ids.extend(stop_token_ids)
+                
             state = deepcopy(states[j])
             if len(state["prompt_ids"]) == 0:
                 state["prompt_ids"] = llm_response.prompt_token_ids # TODO: check the image token
@@ -155,11 +162,6 @@ class MultiTurnEnv(Environment):
             state["completion_ids"].extend(list(llm_response.outputs[0].token_ids))
             state["completion_ids"] = state["completion_ids"][len(state["prompt_ids"]):]
 
-            # if state["completion_ids"][-1] != 198 and state["completion_ids"][-2] != self.message_end_id:
-            #     state["completion_ids"].append(self.message_end_id)
-            #     state["completion_ids"].append(198)
-            #     state["completion_mask"].append(1)
-            #     state["completion_mask"].append(1)
             need_append = False
             if len(state["completion_ids"]) >= 2:
                 if state["completion_ids"][-1] != 198 and state["completion_ids"][-2] != self.message_end_id:

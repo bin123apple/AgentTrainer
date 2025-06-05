@@ -15,11 +15,11 @@ pip install flash-attn --no-build-isolation
 ## Set up vllm
 
 ```
-CUDA_VISIBLE_DEVICES=0,1 python -m agenttrain.inference.vllm_serve --model "Qwen/Qwen2.5-VL-7B-Instruct" --tensor_parallel_size 2 --max_model_len 8192  --gpu_memory_utilization 0.9 --enable_prefix_caching True
+CUDA_VISIBLE_DEVICES=4 python -m agenttrain.inference.vllm_serve --model "Qwen/Qwen2.5-VL-7B-Instruct" --tensor_parallel_size 1 --max_model_len 8192  --gpu_memory_utilization 0.9 --enable_prefix_caching True --limit-mm-per-prompt '{"image":5}'
 ```
 
 ## Train
 
 ```
-CUDA_VISIBLE_DEVICES=2,3,4,5,6,7 accelerate launch --num-processes 6 --config-file agenttrain/configs/zero3.yaml agenttrain/main.py
+CUDA_VISIBLE_DEVICES=5,6,7 accelerate launch --num-processes 3 --config-file agenttrain/configs/zero3.yaml agenttrain/main.py
 ```

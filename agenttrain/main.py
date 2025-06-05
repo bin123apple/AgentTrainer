@@ -116,7 +116,7 @@ def main():
         num_iterations=2,
         beta=0.002,
         max_prompt_length=1024,
-        max_completion_length=2048,
+        max_completion_length=8192,
         per_device_train_batch_size=12,
         per_device_eval_batch_size=12,
         num_generations=6,

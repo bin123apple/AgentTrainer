@@ -44,6 +44,28 @@ logger = logging.getLogger(__name__)
 # the 'spawn' start method
 os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
+from typing import Literal, Union, List, Dict
+from pydantic import BaseModel, model_validator
+# class ContentItem(BaseModel):
+#     type: Literal["text", "image_url"]
+#     text:        str | None               = None
+#     image_url:   Dict[str, str] | None    = None  # 只接受 {"url": "..."} 格式
+
+#     @model_validator(mode="after")
+#     def check_fields(cls, model: "ContentItem") -> "ContentItem":
+#         if model.type == "text":
+#             if model.text is None:
+#                 raise ValueError("如果 type='text'，必须提供 text 字段")
+#         elif model.type == "image_url":
+#             if model.image_url is None or "url" not in model.image_url:
+#                 raise ValueError("如果 type='image_url'，必须提供 {'url': '...'}")
+#         else:
+#             raise ValueError("type 必须是 'text' 或 'image_url'")
+#         return model
+    
+# class Message(BaseModel):
+#     role: Literal["user", "assistant", "system"]
+#     content: Union[str, List[ContentItem]]
 
 class WeightSyncWorkerExtension:
     """
@@ -488,7 +510,7 @@ def main(script_args: ScriptArguments):
         return {"completion_ids": completion_ids}
 
     class ChatRequest(BaseModel):
-        messages: list[list[dict[str, str]]]
+        messages: List[List[dict[str, Union[str, List[dict]]]]]  # List of lists of messages
         n: int = 1
         repetition_penalty: float = 1.0
         temperature: float = 1.0

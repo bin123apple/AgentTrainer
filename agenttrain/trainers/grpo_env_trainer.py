@@ -1,4 +1,5 @@
 import io
+import base64
 import warnings
 from PIL import Image
 from typing import Callable, Optional, Union, Any, List
@@ -34,6 +35,9 @@ from trl import GRPOTrainer, GRPOConfig
 from trl.data_utils import maybe_apply_chat_template
 from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
+from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
+from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
 
 if is_wandb_available():
     import wandb
@@ -288,16 +292,34 @@ class GRPOEnvTrainer(GRPOTrainer):
         if self.accelerator.is_main_process:
             multimodal_inputs = []
             for prompt, image in zip(all_prompts, all_images):
+                initial_prompts = CROP_SYSTEM_PROMPT.format(
+                tool_descriptions=CROP_TOOL_DESCRIPTION,
+                tool_example=CROP_TOOL_EXAMPLE
+                ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'  # 添加系统提示  
                 if image is not None:
-                    # 如果这个样本有图，就在发送给 vLLM 的 payload 里加上图像
-                    multimodal_input = {
-                        "prompt": prompt,
-                        "multi_modal_data": {"image": image}
-                    }
+                    buffered = io.BytesIO()
+                    image.save(buffered, format="PNG")
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                    initial_message = [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": initial_prompts},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
+                                ]
+                            }
+                        ]
                 else:
                     # 纯文本输入
-                    multimodal_input = {"prompt": prompt}
-                multimodal_inputs.append(multimodal_input)
+                    initial_message = [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": initial_prompts},
+                                ]
+                            }
+                        ]
+                multimodal_inputs.append(initial_message)
             # 此时 multimodal_inputs 是一个长度等于 world_batch_size 的列表，
             # 其中每个元素形如 {"prompt": "...", "multi_modal_data": {"image": <PIL>} } 
             # 或者 {"prompt": "..."}。

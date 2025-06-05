@@ -223,7 +223,8 @@ class ToolEnv(MultiTurnEnv):
         try:
             parsed = self.llm_parser.parse(messages[-1]["content"])
             if hasattr(parsed, 'crop') and parsed.crop is not None:
-                data_uri = messages[0]["content"][0]["image_url"]["url"]
+                image_entry = next(item for item in messages[0]["content"] if item["type"] == "image_url")
+                data_uri = image_entry["image_url"]["url"]
                 b64_data = data_uri.split(",", 1)[1]
                 img_bytes = base64.b64decode(b64_data)
                 img = Image.open(io.BytesIO(img_bytes))

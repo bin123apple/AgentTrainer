@@ -1,0 +1,127 @@
+  0%|                                                                                                  | 0/1000 [00:00<?, ?it/s]Traceback (most recent call last):
+Processing response for index 1 with [ChatOutput(token_ids=[1249, 1477, 279, 16184, 315, 279, 330, 8690, 697, 2734, 1431, 1, 3137, 11, 1077, 594, 1191, 553, 15562, 287, 304, 389, 279, 3082, 1380, 279, 3137, 374, 4363, 311, 387, 7407, 13, 358, 3278, 990, 279, 19097, 729, 311, 5244, 389, 279, 3137, 594, 3082, 382, 27, 34147, 29, 34147, 1188, 19, 20, 15, 11, 220, 16, 20, 15, 701, 320, 23, 20, 15, 11, 220, 20, 20, 15, 593, 522, 34147, 29], text='To find the coordinate of the "Register your interest now" button, let\'s start by zooming in on the area where the button is likely to be located. I\'ll use the crop function to focus on the button\'s area.\n\n<crop>crop((450, 150), (850, 550))</crop>')] outputs
+Processing response for index 9 with [ChatOutput(token_ids=[1249, 10542, 279, 3728, 315, 279, 330, 64023, 14577, 304, 10855, 448, 20697, 389, 26967, 11, 1787, 6006, 11, 72400, 4004, 1, 304, 279, 2168, 11, 358, 1184, 311, 1156, 15562, 304, 389, 279, 9760, 949, 315, 279, 2168, 13, 576, 949, 315, 2734, 7952, 311, 387, 279, 3772, 315, 279, 1156, 2168, 1380, 264, 5579, 374, 6839, 304, 279, 10855, 11, 11699, 448, 264, 20697, 389, 279, 26967, 323, 279, 6006, 10078, 264, 19033, 382, 40, 686, 1431, 990, 279, 19097, 5392, 448, 279, 13934, 311, 5244, 389, 429, 3151, 3772, 510, 27, 34147, 29, 34147, 1188, 16, 15, 15, 11, 220, 16, 20, 15, 701, 320, 21, 15, 15, 11, 220, 18, 20, 15, 593, 522, 34147, 1339], text='To identify the location of the "CLICK Driver in truck with tablet on dashboard, open door, blurred background" in the image, I need to first zoom in on the relevant part of the image. The part of interest appears to be the section of the first image where a driver is shown in the truck, sitting with a tablet on the dashboard and the door slightly ajar.\n\nI will now use the crop tool with the coordinates to focus on that specific section:\n<crop>crop((100, 150), (600, 350))</crop>')] outputs
+Processing response for index 7 with [ChatOutput(token_ids=[27, 34147, 29, 34147, 1188, 17, 15, 15, 11, 220, 18, 23, 15, 701, 320, 23, 15, 15, 11, 220, 21, 18, 15, 593, 522, 34147, 29], text='<crop>crop((200, 380), (800, 630))</crop>')] outputs
+Processing response for index 12 with [ChatOutput(token_ids=[1249, 10542, 279, 3728, 315, 279, 330, 16646, 678, 8279, 1, 3137, 2878, 279, 330, 50672, 389, 419, 3910, 1, 3772, 11, 358, 686, 15102, 19097, 279, 3082, 2163, 419, 3137, 382, 10061, 594, 1191, 553, 98937, 279, 5537, 429, 5610, 279, 330, 16646, 678, 8279, 1, 3137, 382, 27, 34147, 29, 34147, 1188, 19, 15, 11, 220, 21, 20, 15, 701, 320, 17, 21, 20, 11, 220, 22, 18, 15, 593, 522, 34147, 29], text='To identify the location of the "Accept all cookies" button within the "Cookies on this website" section, I will initially crop the area around this button.\n\nLet\'s start by cropping the region that contains the "Accept all cookies" button.\n\n<crop>crop((40, 650), (265, 730))</crop>')] outputs
+Processing response for index 3 with [ChatOutput(token_ids=[39814, 11, 358, 3278, 1492, 498, 24523, 279, 330, 8690, 697, 2734, 1431, 1, 3137, 13, 6771, 594, 1191, 553, 15562, 287, 304, 389, 279, 3082, 2163, 279, 3137, 624, 27, 34147, 29, 34147, 1188, 21, 15, 15, 11, 220, 17, 15, 15, 701, 320, 24, 15, 15, 11, 220, 21, 15, 15, 593, 522, 34147, 29], text='Sure, I\'ll help you locate the "Register your interest now" button. Let\'s start by zooming in on the area around the button.\n<crop>crop((600, 200), (900, 600))</crop>')] outputs
+Processing response for index 10 with [ChatOutput(token_ids=[1249, 10542, 279, 330, 64023, 14577, 304, 10855, 448, 20697, 389, 26967, 11, 1787, 6006, 11, 72400, 4004, 497, 358, 686, 990, 279, 19097, 5392, 311, 15562, 304, 389, 279, 9760, 3082, 382, 27, 34147, 29, 34147, 1188, 16, 15, 15, 11, 220, 16, 15, 15, 701, 320, 18, 15, 15, 11, 220, 18, 15, 15, 593, 522, 34147, 29], text='To identify the "CLICK Driver in truck with tablet on dashboard, open door, blurred background", I will use the crop tool to zoom in on the relevant area.\n\n<crop>crop((100, 100), (300, 300))</crop>')] outputs
+Processing response for index 2 with [ChatOutput(token_ids=[39814, 11, 358, 3278, 1492, 498, 24523, 279, 330, 8690, 697, 2734, 1431, 1, 3137, 13, 6771, 594, 23643, 279, 2168, 323, 1490, 421, 582, 646, 15562, 304, 311, 3410, 264, 23560, 16184, 382, 27, 34147, 29, 34147, 1188, 15, 11, 220, 15, 701, 320, 16, 17, 23, 15, 11, 220, 16, 17, 23, 15, 593, 522, 34147, 29], text='Sure, I\'ll help you locate the "Register your interest now" button. Let\'s analyze the image and see if we can zoom in to provide a precise coordinate.\n\n<crop>crop((0, 0), (1280, 1280))</crop>')] outputs
+Processing response for index 13 with [ChatOutput(token_ids=[27, 9217, 2235, 16, 15, 20, 11, 220, 22, 16, 22, 12533, 9217, 29], text='<answer>(105, 717)</answer>')] outputs
+Processing response for index 8 with [ChatOutput(token_ids=[27, 34147, 29, 34147, 1188, 17, 19, 15, 11, 220, 18, 20, 20, 701, 320, 20, 15, 20, 11, 220, 21, 15, 15, 593, 522, 34147, 29], text='<crop>crop((240, 355), (505, 600))</crop>')] outputs
+Processing response for index 16 with [ChatOutput(token_ids=[1249, 10542, 279, 3151, 3728, 315, 279, 330, 16646, 678, 8279, 1, 3137, 2878, 279, 330, 50672, 389, 419, 3910, 1, 3772, 11, 358, 4700, 1191, 553, 15562, 287, 304, 389, 429, 3772, 13, 6771, 748, 5244, 279, 19097, 389, 279, 330, 50672, 389, 419, 3910, 1, 3082, 311, 633, 264, 12128, 1401, 518, 279, 3137, 382, 27, 34147, 29, 34147, 1188, 17, 15, 15, 11, 220, 22, 15, 15, 701, 320, 23, 15, 15, 11, 220, 23, 15, 15, 593, 522, 34147, 29], text='To identify the specific location of the "Accept all cookies" button within the "Cookies on this website" section, I’ll start by zooming in on that section. Let’s focus the crop on the "Cookies on this website" area to get a closer look at the button.\n\n<crop>crop((200, 700), (800, 800))</crop>')] outputs
+Processing response for index 19 with [ChatOutput(token_ids=[1249, 24523, 279, 330, 11025, 1, 2656, 11, 358, 3278, 15562, 304, 389, 279, 5022, 3082, 311, 10542, 1181, 2309, 13, 715, 27, 34147, 29, 34147, 1188, 16, 24, 15, 11, 220, 16, 23, 15, 701, 320, 22, 15, 15, 11, 220, 17, 19, 15, 593, 522, 34147, 29], text='To locate the "Services" link, I\'ll zoom in on the menu area to identify its position. \n<crop>crop((190, 180), (700, 240))</crop>')] outputs
+Processing response for index 11 with [ChatOutput(token_ids=[10061, 594, 1191, 553, 15562, 287, 304, 389, 279, 3772, 429, 4933, 279, 5579, 304, 279, 10855, 448, 264, 20697, 389, 279, 26967, 13, 358, 3278, 990, 279, 19097, 5392, 311, 5244, 389, 419, 3082, 382, 27, 34147, 29, 34147, 1188, 17, 15, 15, 11, 220, 18, 17, 15, 701, 320, 21, 15, 15, 11, 220, 20, 16, 15, 593, 522, 34147, 29], text="Let's start by zooming in on the section that shows the driver in the truck with a tablet on the dashboard. I'll use the crop tool to focus on this area.\n\n<crop>crop((200, 320), (600, 510))</crop>")] outputs
+Processing response for index 0 with [ChatOutput(token_ids=[27, 34147, 29, 34147, 1188, 19, 15, 15, 11, 220, 20, 15, 701, 320, 21, 15, 15, 11, 220, 16, 15, 15, 593, 522, 34147, 29], text='<crop>crop((400, 50), (600, 100))</crop>')] outputs
+Processing response for index 5 with [ChatOutput(token_ids=[10061, 594, 15562, 304, 389, 279, 3137, 429, 2727, 330, 8690, 697, 2734, 1431, 1, 311, 633, 264, 48379, 1651, 315, 1181, 2309, 624, 27, 34147, 29, 34147, 1188, 16, 15, 11, 220, 16, 15, 15, 701, 320, 18, 15, 15, 11, 220, 18, 15, 15, 593, 522, 34147, 29], text='Let\'s zoom in on the button that says "Register your interest now" to get a clearer view of its position.\n<crop>crop((10, 100), (300, 300))</crop>')] outputs
+Processing response for index 4 with [ChatOutput(token_ids=[1249, 1477, 279, 16184, 315, 279, 330, 8690, 697, 2734, 1431, 1, 3137, 11, 1077, 594, 1156, 15562, 304, 389, 279, 3082, 1380, 419, 3137, 374, 7407, 382, 27, 34147, 29, 34147, 1188, 20, 15, 15, 11, 220, 16, 15, 15, 701, 320, 23, 15, 15, 11, 220, 19, 15, 15, 593, 522, 34147, 29], text='To find the coordinate of the "Register your interest now" button, let\'s first zoom in on the area where this button is located.\n\n<crop>crop((500, 100), (800, 400))</crop>')] outputs
+Processing response for index 15 with [ChatOutput(token_ids=[27, 34147, 29, 34147, 1188, 19, 15, 11, 220, 21, 23, 15, 701, 320, 17, 15, 15, 11, 220, 22, 21, 15, 593, 522, 34147, 29], text='<crop>crop((40, 680), (200, 760))</crop>')] outputs
+Processing response for index 14 with [ChatOutput(token_ids=[27, 9217, 2235, 23, 24, 11, 220, 21, 23, 20, 12533, 9217, 29], text='<answer>(89, 685)</answer>')] outputs
+Processing response for index 6 with [ChatOutput(token_ids=[1249, 1492, 498, 24523, 279, 330, 64023, 14577, 304, 10855, 448, 20697, 389, 26967, 11, 1787, 6006, 11, 72400, 4004, 1335, 358, 3278, 1191, 553, 98937, 279, 3082, 429, 7952, 311, 387, 279, 10855, 594, 26967, 13, 576, 5537, 358, 3982, 10820, 438, 8482, 279, 9760, 5424, 646, 387, 60143, 438, 11017, 1447, 27, 34147, 29, 34147, 1188, 18, 15, 15, 11, 220, 18, 15, 15, 701, 320, 20, 15, 15, 11, 220, 19, 15, 15, 593, 522, 34147, 1339], text='To help you locate the "CLICK Driver in truck with tablet on dashboard, open door, blurred background," I\'ll start by cropping the area that appears to be the truck\'s dashboard. The region I’ve identified as containing the relevant elements can be cropped as follows:\n\n<crop>crop((300, 300), (500, 400))</crop>')] outputs
+Processing response for index 17 with [ChatOutput(token_ids=[1249, 24523, 279, 330, 16646, 678, 8279, 1, 3137, 11, 358, 1184, 311, 15562, 304, 389, 279, 330, 50672, 389, 419, 3910, 1, 3772, 13, 358, 3278, 1191, 553, 37838, 264, 5537, 429, 17267, 5646, 419, 3082, 13, 576, 330, 50672, 389, 419, 3910, 1, 3772, 7952, 311, 387, 304, 279, 5622, 7950, 949, 315, 279, 2168, 13, 6771, 594, 1430, 279, 2701, 19097, 1447, 27, 34147, 29, 34147, 1188, 15, 11, 220, 20, 20, 15, 701, 320, 17, 17, 15, 11, 220, 22, 15, 15, 593, 522, 34147, 29], text='To locate the "Accept all cookies" button, I need to zoom in on the "Cookies on this website" section. I\'ll start by specifying a region that roughly includes this area. The "Cookies on this website" section appears to be in the bottom-left part of the image. Let\'s try the following crop:\n\n<crop>crop((0, 550), (220, 700))</crop>')] outputs
+Processing response for index 22 with [ChatOutput(token_ids=[1249, 10542, 279, 16184, 315, 279, 330, 11025, 1, 2656, 11, 358, 686, 1156, 15562, 304, 389, 279, 10646, 3619, 13, 576, 330, 11025, 1, 2656, 374, 7407, 8841, 279, 8416, 1290, 949, 315, 279, 10646, 3619, 13, 358, 3278, 990, 279, 19097, 5392, 369, 419, 382, 27, 34147, 29, 34147, 1188, 21, 15, 15, 11, 220, 16, 19, 15, 701, 320, 21, 22, 15, 11, 220, 16, 22, 15, 593, 522, 34147, 29], text='To identify the coordinate of the "Services" link, I will first zoom in on the navigation bar. The "Services" link is located toward the upper right part of the navigation bar. I\'ll use the crop tool for this.\n\n<crop>crop((600, 140), (670, 170))</crop>')] outputs
+Processing response for index 18 with [ChatOutput(token_ids=[10061, 594, 15562, 304, 389, 279, 330, 11025, 1, 2656, 311, 633, 264, 48379, 1651, 13, 2303, 27, 34147, 29, 34147, 1188, 22, 20, 15, 11, 220, 16, 22, 23, 701, 320, 23, 19, 15, 11, 220, 17, 20, 17, 593, 522, 34147, 29], text='Let\'s zoom in on the "Services" link to get a clearer view.  \n<crop>crop((750, 178), (840, 252))</crop>')] outputs
+Processing response for index 21 with [ChatOutput(token_ids=[10061, 594, 1191, 553, 15562, 287, 304, 389, 279, 330, 11025, 1, 2656, 304, 279, 10646, 3619, 13, 1205, 646, 990, 279, 19097, 5392, 369, 16052, 13, 5692, 594, 279, 19097, 1447, 27, 34147, 29, 34147, 1188, 23, 23, 15, 11, 220, 16, 24, 17, 701, 320, 24, 16, 15, 11, 220, 17, 17, 17, 593, 522, 34147, 29], text='Let\'s start by zooming in on the "Services" link in the navigation bar. We can use the crop tool for precision. Here\'s the crop:\n\n<crop>crop((880, 192), (910, 222))</crop>')] outputs
+Processing response for index 20 with [ChatOutput(token_ids=[27, 34147, 29, 34147, 1188, 22, 22, 22, 11, 220, 16, 22, 19, 23547, 16, 15, 20, 16, 11, 16, 24, 21, 593, 522, 34147, 29], text='<crop>crop((777, 174),(1051,196))</crop>')] outputs
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/main.py", line 186, in <module>
+    main()
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/main.py", line 181, in main
+    trainer.train()
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2240, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2555, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 3739, in training_step
+    inputs = self._prepare_inputs(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/extras/profiling.py", line 87, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py", line 899, in _prepare_inputs
+    accumulated_local_batch = self._generate_and_score_completions(accumulated_local_batch)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/trainers/grpo_env_trainer.py", line 328, in _generate_and_score_completions
+    env_result = self.env.generate(
+                 ^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 235, in generate
+    states = self.step(states, llm, custom_sp)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 204, in step
+    results = list(executor.map(
+              ^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 205, in <lambda>
+    lambda args: update_state(*args),
+                 ^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 139, in update_state
+    if llm_response.outputs[0].finish_reason == 'stop':
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/pydantic/main.py", line 991, in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+AttributeError: 'ChatOutput' object has no attribute 'finish_reason'
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/main.py", line 186, in <module>
+[rank0]:     main()
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/main.py", line 181, in main
+[rank0]:     trainer.train()
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2240, in train
+[rank0]:     return inner_training_loop(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 2555, in _inner_training_loop
+[rank0]:     tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+[rank0]:                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/transformers/trainer.py", line 3739, in training_step
+[rank0]:     inputs = self._prepare_inputs(inputs)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/extras/profiling.py", line 87, in wrapper
+[rank0]:     return func(self, *args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/trl/trainer/grpo_trainer.py", line 899, in _prepare_inputs
+[rank0]:     accumulated_local_batch = self._generate_and_score_completions(accumulated_local_batch)
+[rank0]:                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/trainers/grpo_env_trainer.py", line 328, in _generate_and_score_completions
+[rank0]:     env_result = self.env.generate(
+[rank0]:                  ^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 235, in generate
+[rank0]:     states = self.step(states, llm, custom_sp)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 204, in step
+[rank0]:     results = list(executor.map(
+[rank0]:               ^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 619, in result_iterator
+[rank0]:     yield _result_or_cancel(fs.pop())
+[rank0]:           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 317, in _result_or_cancel
+[rank0]:     return fut.result(timeout)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+[rank0]:     return self.__get_result()
+[rank0]:            ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+[rank0]:     raise self._exception
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+[rank0]:     result = self.fn(*self.args, **self.kwargs)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 205, in <lambda>
+[rank0]:     lambda args: update_state(*args),
+[rank0]:                  ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/AgentTrainer/agenttrain/envs/multiturn_env.py", line 139, in update_state
+[rank0]:     if llm_response.outputs[0].finish_reason == 'stop':
+[rank0]:        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/pydantic/main.py", line 991, in __getattr__
+[rank0]:     raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+[rank0]: AttributeError: 'ChatOutput' object has no attribute 'finish_reason'

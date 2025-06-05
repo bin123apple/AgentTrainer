@@ -1,0 +1,7 @@
+{"time":"2025-06-05T05:18:35.872834974Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/mnt/data1/home/lei00126/AgentTrainer/wandb/run-20250605_051835-fe20mokh/logs/debug-core.log"}
+{"time":"2025-06-05T05:18:36.17407767Z","level":"INFO","msg":"created new stream","id":"fe20mokh"}
+{"time":"2025-06-05T05:18:36.174166071Z","level":"INFO","msg":"stream: started","id":"fe20mokh"}
+{"time":"2025-06-05T05:18:36.174177722Z","level":"INFO","msg":"writer: Do: started","stream_id":"fe20mokh"}
+{"time":"2025-06-05T05:18:36.174231162Z","level":"INFO","msg":"sender: started","stream_id":"fe20mokh"}
+{"time":"2025-06-05T05:18:36.174238692Z","level":"INFO","msg":"handler: started","stream_id":"fe20mokh"}
+{"time":"2025-06-05T05:18:36.280421571Z","level":"INFO","msg":"Starting system monitor"}
