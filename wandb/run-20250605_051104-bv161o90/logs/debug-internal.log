@@ -1,7 +1,0 @@
-{"time":"2025-06-05T05:11:04.106406313Z","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/mnt/data1/home/lei00126/AgentTrainer/wandb/run-20250605_051104-bv161o90/logs/debug-core.log"}
-{"time":"2025-06-05T05:11:04.393048952Z","level":"INFO","msg":"created new stream","id":"bv161o90"}
-{"time":"2025-06-05T05:11:04.393106172Z","level":"INFO","msg":"stream: started","id":"bv161o90"}
-{"time":"2025-06-05T05:11:04.393126743Z","level":"INFO","msg":"writer: Do: started","stream_id":"bv161o90"}
-{"time":"2025-06-05T05:11:04.393159413Z","level":"INFO","msg":"handler: started","stream_id":"bv161o90"}
-{"time":"2025-06-05T05:11:04.393217474Z","level":"INFO","msg":"sender: started","stream_id":"bv161o90"}
-{"time":"2025-06-05T05:11:04.50197034Z","level":"INFO","msg":"Starting system monitor"}
