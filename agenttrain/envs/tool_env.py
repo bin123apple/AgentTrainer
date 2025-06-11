@@ -2,13 +2,13 @@ import io
 import ast
 import base64
 import inspect
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Union
 
 from datasets import Dataset
 from agenttrain.tools import crop
 from PIL import Image
-from trainers.grpo_env_trainer import RewardFunc
-from envs.multiturn_env import MultiTurnEnv
+from agenttrain.trainers.grpo_env_trainer import RewardFunc
+from agenttrain.envs.multiturn_env import MultiTurnEnv
 from agenttrain.parsers import XMLParser # rewrite this one
 from agenttrain.prompts.system_prompts import CROP_TOOL_PROMPT_TEMPLATE 
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
@@ -147,14 +147,14 @@ class ToolEnv(MultiTurnEnv):
                 step_count += 1
         return step_count
     
-    def is_completed(self, messages: List[Dict[str, str]], **kwargs: Any) -> bool:
+    def is_completed(self, messages: List[dict[str, Union[str, List[dict]]]], **kwargs: Any) -> bool:
         try:
             # Check if we've hit max steps by counting tool uses in the message history
             step_count = self._get_step_count(messages)
             if step_count > self.max_steps:
                 return True
             
-            parsed = self.llm_parser.parse(messages[-1]["content"])
+            parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
             # Check if we got a valid answer field (not just None from failed parsing)
             return hasattr(parsed, 'answer') and parsed.answer is not None
         except Exception:
@@ -216,44 +216,64 @@ class ToolEnv(MultiTurnEnv):
             # 4. 真正调用 crop，并返回结果
             return crop(img, top_left, bottom_right)
 
-        except Exception:
+        except Exception as e:
+            print(f"Error calling tool {e}")
             return None, f"Wrong Format:{usage}"
 
-    def env_response(self, messages: List[Dict[str, str]], **kwargs: Any) -> Dict[str, Any]:
+    def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , **kwargs: Any) -> Dict[str, Any]:
         try:
-            parsed = self.llm_parser.parse(messages[-1]["content"])
+            parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
+            print(f"Parsed content: {parsed}")
             if hasattr(parsed, 'crop') and parsed.crop is not None:
                 image_entry = next(item for item in messages[0]["content"] if item["type"] == "image_url")
                 data_uri = image_entry["image_url"]["url"]
                 b64_data = data_uri.split(",", 1)[1]
                 img_bytes = base64.b64decode(b64_data)
-                img = Image.open(io.BytesIO(img_bytes))
+                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                 crop_bytes, info_message = self.call_tool(parsed.crop, img)
                 if crop_bytes:
                     crop_b64 = base64.b64encode(crop_bytes).decode('utf-8')
+                    cropped_img = Image.open(io.BytesIO(crop_bytes)).convert("RGB")
+                    images.append(cropped_img) # add to images list for further processing
                     multimodal_message = [
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{crop_b64}"}
-                        },
-                        {
-                            "type": "text",
-                            "text": info_message
-                        }
-                    ]
-                    return {"role": "user", "content": multimodal_message}
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{crop_b64}"}
+                            },
+                            {
+                                "type": "text",
+                                "text": info_message
+                            }
+                        ]
+                    tool_feedback =  {"role": "user", "content": multimodal_message}
+                    messages.append(tool_feedback)
+                    return
+                    
                 else:
-                    return {
+                    tool_feedback = {
                         "role": "user",
                         "content": [
                             {"type": "text", "text": f"Error: {info_message}"}
                         ]
                     }
+                    messages.append(tool_feedback)
+                    return
+            else:
+                tool_feedback = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "No valid tool command found in the last message.\ncrop tool Usage: crop((x1, y1), (x2, y2))"}
+                    ]
+                }
+                messages.append(tool_feedback)
+                return
 
         except Exception as e:
-            return {
+            tool_feedback = {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": f"Unexpected error in env_response: {e}"}
                 ]
             }
+            messages.append(tool_feedback)
+            return

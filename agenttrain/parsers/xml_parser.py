@@ -41,6 +41,10 @@ class XMLParser:
         
         The returned function evaluates if messages in trajectories properly use 
         the expected XML tags defined in this parser's fields configuration.
+        For example: 
+        <crop>...</crop>
+        <answer>...</answer>
+        They should appear in pairs.
         """
         def xml_reward_func(completions, **kwargs) -> List[float]:
             """Reward function that checks for proper XML tag usage in completions."""
@@ -53,7 +57,7 @@ class XMLParser:
                 # Calculate XML tag usage scores for each message
                 xml_scores = []
                 for msg in model_messages:
-                    content = msg['content']
+                    content = msg['content'][0]["text"]
                     score = 0
                     total_checks = 0
                     
@@ -111,7 +115,7 @@ class XMLParser:
                 # Calculate format adherence for each message
                 format_scores = []
                 for msg in model_messages:
-                    content = msg['content']
+                    content = msg['content'][0]["text"]
                     parsed = self.parse(content)
                     parsed_no_strip = self.parse(content, strip=False)
                     

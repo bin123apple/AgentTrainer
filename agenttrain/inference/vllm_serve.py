@@ -134,32 +134,6 @@ class WeightSyncWorkerExtension:
             name = name.replace("model.","")
         self.model_runner.model.load_weights(weights=[(name, weight)])  # type: ignore
 
-
-    # def update_named_param(self, name: str, dtype: torch.dtype, shape: Sequence[int]) -> None:
-    #     """
-    #     Receives updated weights from the client process and updates the named parameter in the model.
-
-    #     Args:
-    #         name (`str`):
-    #             Name of the weight tensor being updated.
-    #         dtype (`torch.dtype`):
-    #             Data type of the weight tensor (e.g., `torch.float32`).
-    #         shape (`Sequence[int]`):
-    #             Shape of the weight tensor.
-    #     """
-    #     if self.pynccl_comm is None:
-    #         raise RuntimeError("Communicator not initialized. Call `init_communicator` first.")
-    #     print(">>> vLLM current keys:", list(self.model_runner.model.state_dict().keys()))
-    #     # Allocate memory for the incoming weight tensor on the correct device.
-    #     weight = torch.empty(shape, dtype=dtype, device=self.device)
-
-    #     # Use NCCL to broadcast the updated weights from the client (src) to all workers.
-    #     self.pynccl_comm.broadcast(weight, src=self.client_rank)
-    #     self.pynccl_comm.group.barrier()
-
-    #     # Load the received weights into the model.
-    #     self.model_runner.model.load_weights(weights=[(name, weight)]) # type: ignore
-
     def close_communicator(self) -> None:
         """
         Closes the communicator when weight synchronization is no longer needed.
@@ -330,7 +304,9 @@ def llm_worker(
             method_name = command["method"]
             args, kwargs = command.get("args", ()), command.get("kwargs", {})
             method = getattr(llm, method_name)
+            # print(f"Worker {data_parallel_rank} executing command")
             result = method(*args, **kwargs)
+            # print(f"Worker {data_parallel_rank} received command")
             if command["type"] == "call":
                 connection.send(result)
         elif command["type"] == "shutdown":
@@ -486,7 +462,9 @@ def main(script_args: ScriptArguments):
         )
 
         # Evenly distribute prompts across DP ranks
+        # print(f"Distributing {len(request.prompts)} prompts across {script_args.data_parallel_size} data parallel ranks")
         chunked_prompts = chunk_list(request.prompts, script_args.data_parallel_size)
+        # print(f"Finish Chunking prompts.")
 
         # Send the prompts to each worker
         for connection, prompts in zip(connections, chunked_prompts):
@@ -529,6 +507,7 @@ def main(script_args: ScriptArguments):
         text: str
 
     class ChatResponseItem(BaseModel):
+        prompt: str
         prompt_token_ids: list[int]
         outputs: list[ChatOutput]
 
@@ -558,7 +537,7 @@ def main(script_args: ScriptArguments):
         {"responses": [{"prompt_token_ids": [101, 102, 103], "outputs": [{"token_ids": [201, 202, 203], "text": "Hello, how are you?"}]}]}
         ```
         """
-
+        # print(f"Received chat request with {len(request.messages)} messages")
         # Guided decoding, if enabled
         if request.guided_decoding_regex is not None:
             guided_decoding = GuidedDecodingParams(backend="outlines", regex=request.guided_decoding_regex)
@@ -582,30 +561,40 @@ def main(script_args: ScriptArguments):
         )
 
         # Evenly distribute prompts across DP ranks
+        # print(f"Distributing {len(request.messages)} messages across {script_args.data_parallel_size} data parallel ranks")
         chunked_messages = chunk_list(request.messages, script_args.data_parallel_size)
-
+        # print(f"Finish Chunking messages.")
+        
         # Send the prompts to each worker
         for connection, messages in zip(connections, chunked_messages):
+            # print(f"Sending messages to worker")
             # When the number of prompts is less than data_parallel_size, some workers will receive empty prompts.
             # However, vLLM requires that we always send at least one prompt. So we send a placeholder prompt to comply
             # with vLLM's requirement, and we later ignore the result.
             if not messages:
-                messages = [{"role": "user", "content": "<placeholder>"}]
+                # print(f"Worker received empty messages, sending placeholder")
+                messages = [{"role": "user", "content": [{"type": "text", "text": "<placeholder>"}]}]
 
             kwargs = {"messages": messages, "sampling_params": sampling_params}
             connection.send({"type": "call", "method": "chat", "kwargs": kwargs})   
 
         # Receive results
+        # print(f"Waiting for results from workers")
         all_outputs = [connection.recv() for connection in connections]
+        # print(f"Received results from workers")
 
         # Handle empty prompts (see above)
+        # print(f"Filtering out empty messages from results")
         all_outputs = [output for output, messages in zip(all_outputs, chunked_messages) if messages]
+        # print(f"Finish filtering empty messages from results")
 
         # Flatten and combine all results   
         all_outputs = list(chain.from_iterable(all_outputs))  # from list of list to single list
         responses = []
         for outputs in all_outputs:
+            # print(f"Received outputs from worker")
             response = ChatResponseItem(
+                prompt = outputs.prompt,
                 prompt_token_ids=list(outputs.prompt_token_ids),
                 outputs=[],
             )
@@ -615,6 +604,7 @@ def main(script_args: ScriptArguments):
                     text=output.text,
                 ))
             responses.append(response)
+        # print(f"Returning {len(responses)} responses")
         return {"responses": responses}
 
     class InitCommunicatorRequest(BaseModel):

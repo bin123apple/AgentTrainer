@@ -2,7 +2,7 @@ from abc import ABC
 from typing import List, Dict
 import logging
 
-from trainers.grpo_env_trainer import RewardFunc
+from agenttrain.trainers.grpo_env_trainer import RewardFunc
 
 def equals_reward_func(completions, answer, **kwargs) -> List[float]:
     responses = [c[0]['content'] for c in completions]
@@ -27,7 +27,7 @@ class Rubric(ABC):
             if msg['role'] == 'assistant':
                 if self.parser is None:
                     raise ValueError("Parser is not set")
-                parsed = self.parser.parse(msg['content'])
+                parsed = self.parser.parse(msg['content'][0]['text'])
                 if hasattr(parsed, 'answer') and parsed.answer is not None:
                     return parsed.answer
         return None

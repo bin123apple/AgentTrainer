@@ -24,7 +24,7 @@ def load_processed_dataset(data_path: str) -> Dataset:
     
     Args:
         data_path: 预处理数据的路径
-        
+    
     Returns:
         Dataset: 加载的数据集
     """
@@ -46,11 +46,11 @@ def main():
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000"
+        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_500"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
-        print("请先运行 preprocess_data.py 生成预处理数据")
+        print("请先运行 agenttrain/utils/data_collection_save.py 生成预处理数据")
         return  # 或者 raise e 来停止程序
         
         # 备用方案：如果预处理数据不存在，可以临时使用原始处理方式
@@ -65,7 +65,7 @@ def main():
     
     # 2. 随机打乱并按比例分割数据集
     print("2. 分割训练集和验证集...")
-    split = dataset.shuffle(seed=0).train_test_split(test_size=0.1, seed=0)
+    split = dataset.shuffle(seed=0).train_test_split(test_size=0.01, seed=0)
     
     train_dataset = split["train"]    # 90% 用于训练
     # print(f"Fist record in train dataset: {train_dataset[0]}")
@@ -131,7 +131,7 @@ def main():
         save_only_model=True,
         use_vllm=True,
         vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
-        vllm_server_port=8000,
+        vllm_server_port=8888,
         vllm_gpu_memory_utilization=0.9,
         logging_steps=1,
         log_on_each_node=False,
@@ -169,6 +169,7 @@ def main():
     trainer = GRPOEnvTrainer(
         model=model_name,
         reward_funcs=tool_env.get_reward_funcs(),
+        reward_weights=tool_env.get_reward_weights(),
         env=tool_env,
         args=training_args,
         train_dataset=train_dataset,

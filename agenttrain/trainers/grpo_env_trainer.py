@@ -1,8 +1,10 @@
 import io
+import re
 import base64
 import warnings
 from PIL import Image
-from typing import Callable, Optional, Union, Any, List
+from typing import Callable, Dict, Optional, Union, Any, List
+import torch.nn.functional as F
 from agenttrain.vlm_modules import VLMBaseModule
 from accelerate.utils import broadcast_object_list, gather, gather_object
 from datasets import Dataset, IterableDataset
@@ -21,10 +23,11 @@ from transformers.utils import is_peft_available
 if is_peft_available():
     from peft import PeftConfig, get_peft_model
 RewardFunc = Union[str, PreTrainedModel, Callable[[list, list], list[float]]]
-from envs.environment import Environment
-from utils.logging_utils import print_prompt_completions_sample
+from agenttrain.envs.environment import Environment
+from agenttrain.utils.logging_utils import print_prompt_completions_sample
 from vllm import LLM, SamplingParams
-from inference.vllm_client import VLLMClient
+import torch.distributed as dist
+from agenttrain.inference.vllm_client import VLLMClient
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 
 # monkey patch vllm client
@@ -35,6 +38,7 @@ from trl import GRPOTrainer, GRPOConfig
 from trl.data_utils import maybe_apply_chat_template
 from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
+from agenttrain.utils.torch_ope import nanmin, nanmax
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
 from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
@@ -66,6 +70,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             model: Union[str, PreTrainedModel],
             env: Environment,
             reward_funcs: Union[RewardFunc, list[RewardFunc]],
+            reward_weights,
             scale_rewards: bool = False,
             args: Optional[GRPOConfig] = None,
             train_dataset: Optional[Union[Dataset, IterableDataset]] = None,
@@ -98,7 +103,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         model_init_kwargs["attn_implementation"] = attn_implementation
         if model_init_kwargs.get("torch_dtype") is None:
             model_init_kwargs["torch_dtype"] = torch_dtype
-        
+
         assert isinstance(model, str), "model must be a string in the current implementation"
         model_id = model
         torch_dtype = model_init_kwargs.get("torch_dtype")
@@ -178,10 +183,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             else:
                 print("Setting pad_token_id and eos_token from processing_class...")
                 assert isinstance(processing_class, PreTrainedTokenizerBase), "processing_class must be an instance of PreTrainedTokenizerBase if it has no tokenizer attribute"
-                pad_token_id = processing_class.pad_token_id
-
-        # self.vlm_module.post_model_init(model, processing_class)
-        # self.vlm_module.post_model_init(self.ref_model, processing_class)
+                pad_token_id = processing_class.pad_token
         
         super().__init__(
             model=model,
@@ -205,205 +207,437 @@ class GRPOEnvTrainer(GRPOTrainer):
             min_p=0.0 if self.min_p is None else self.min_p,
             repetition_penalty=self.repetition_penalty
         )
-    def _generate_and_score_completions(
-        self, inputs: dict[str, Union[torch.Tensor, Any]]   
-    ) -> dict[str, Union[torch.Tensor, Any]]:
-        ############################################
-        # 1. 准备硬件设备、提取 prompt 与 image  #
-        ############################################
-        device = self.accelerator.device
-        # print(f'Keys in in put:{inputs[0].keys()}')
-        prompts = [x["question"] for x in inputs]      # inputs[i]["question"] 是一个聊天历史的 message dict 列表
-        images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]    # inputs[i] 中如果有 "image"，就拿出来，否则 None
-        
-        ##################################################
-        # 2. 用 maybe_apply_chat_template 构造文本提示， #
-        #    支持多模态也照常把文本部分拼好。         #
-        ##################################################
-        prompts_text = [
-            maybe_apply_chat_template(example, self.processing_class)["question"]
-            for example in inputs
-        ]
-        #   - 这里的 maybe_apply_chat_template 会把 `example["prompt"]` 
-        #     （一个 List[Dict{role,content}]）渲染成 LLM 可读的字符串，
-        #     同时保留角色信息、特殊标记等。和纯文本版完全一致。
-
-        ##################################################################
-        # 3. 调用 processing_class 来把文本 + 图像 一起转成模型输入（多模态） #
-        ##################################################################
-        if any(img is not None for img in images):
-            # ----- 多模态分支 -----
-            prompt_inputs = self.processing_class(
+        self.reward_weights = reward_weights
+    
+    def _prepare_multimodal_chat_template(self, prompts: List[str], images: List[Image.Image]) -> List[dict]:
+        '''
+        Prepare the multimodal chat template for vLLM inference.
+        This function takes a list of prompts and a list of images, and returns a list of dictionaries
+        that can be used as input to the vLLM model.
+        '''
+        multimodal_inputs = []
+        for prompt, image in zip(prompts, images):
+            initial_prompts = CROP_SYSTEM_PROMPT.format(
+            tool_descriptions=CROP_TOOL_DESCRIPTION,
+            tool_example=CROP_TOOL_EXAMPLE
+            ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
+            if image is not None:
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                initial_message = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": initial_prompts},
+                                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
+                            ]
+                        }
+                    ]
+            else:
+                initial_message = [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": initial_prompts},
+                            ]
+                        }
+                    ]
+            multimodal_inputs.append(initial_message)
+        return multimodal_inputs
+    
+    def prepare_model_inputs(self, prompts_text, images, return_tensors="pt", 
+                         padding=True, padding_side="left", add_special_tokens=False):
+        if len(images) > 0:
+            model_inputs = self.processing_class(
                 text=prompts_text,
-                images=images, 
-                return_tensors="pt", 
-                padding=True, 
-                padding_side="left", 
-                add_special_tokens=False
-            )
-            #  这里的关键在于：prompt_inputs 必须包含
-            #    - "input_ids" (batch_size, seq_len_text)
-            #    - "attention_mask" (batch_size, seq_len_text)
-            #    - "pixel_values"    (batch_size, 3, H, W) 或其他图像张量
-            #    - "image_grid_thw"  (batch_size, G, T, H, W) 如果需要
-            #  你要确认 processing_class.__call__ 的签名支持 text=…、images=…。
+                images=images,
+                return_tensors=return_tensors,
+                padding=padding,
+                padding_side=padding_side,
+                add_special_tokens=add_special_tokens)
         else:
-            # ----- 纯文本分支（保持向后兼容） ----
-            prompt_inputs = self.processing_class(
-                prompts_text, 
-                return_tensors="pt", 
-                padding=True, 
-                padding_side="left", 
-                add_special_tokens=False
+            model_inputs = self.processing_class(
+                text=prompts_text,
+                return_tensors=return_tensors,
+                padding=padding,
+                padding_side=padding_side,
+                add_special_tokens=add_special_tokens)
+        # print(f"Model inputs: {model_inputs}")
+        return model_inputs
+    
+    def generate_logits_to_keep_batch(
+        self,
+        batch_input_ids,
+        start_sequence,
+        end_sequence
+    ):
+        """
+        生成 logits_to_keep 掩码，标记出每条序列中位于
+        start_sequence（例如 [151644, 77091, 198]）与 end_sequence（例如 [151645]）之间的所有 token。
+
+        参数：
+        - batch_input_ids: List[List[int]] 或 Tensor(N, S)，
+            N 条序列，每条长度为 S。
+        - start_sequence:  List[int]，表示 <|im_start|>assistant 对应的多 token 标记序列。
+        - end_sequence:    List[int]，表示 <|im_end|> 对应的多 token 标记序列。
+
+        返回：
+        - List[List[int]]，大小 (N, S)，其中 1 表示该位置属于 assistant
+            生成区段（不包括 start_sequence 和 end_sequence 本身），其它位置为 0。
+        """
+        # 如果传入的是 Tensor，就先转成 Python list
+        if isinstance(batch_input_ids, torch.Tensor):
+            batch_input_ids = batch_input_ids.tolist()
+
+        mask_batch = []
+        len_start = len(start_sequence)
+        len_end = len(end_sequence)
+
+        for seq in batch_input_ids:
+            S = len(seq)
+            mask = [0] * S
+            i = 0
+            in_assistant = False
+
+            while i < S:
+                # 如果当前片段匹配 start_sequence 且尚未进入 assistant 段
+                if not in_assistant and i + len_start <= S and seq[i : i + len_start] == start_sequence:
+                    in_assistant = True
+                    i += len_start
+                    continue
+
+                # 如果当前片段匹配 end_sequence 且已在 assistant 段
+                if in_assistant and i + len_end <= S and seq[i : i + len_end] == end_sequence:
+                    in_assistant = False
+                    i += len_end
+                    continue
+
+                # 普通 token：如果正处于 assistant 段，则打上掩码
+                if in_assistant:
+                    mask[i] = 1
+                i += 1
+
+            mask_batch.append(mask)
+        # print(f"Generated logits_to_keep mask: {mask_batch}, {len(mask_batch[0])}")
+        return mask_batch
+
+    def compute_rewards(
+        self,
+        questions: List[str],
+        inputs: List[Dict],
+        images: List[Optional[Image.Image]],
+        completion_messages: List[Dict],
+        device: torch.device,
+    ):
+        """
+        多卡环境下计算 rewards：
+        - device: 当前进程所使用的设备 (e.g. torch.device("cuda", local_rank))
+        - 假设已初始化 torch.distributed
+        """
+        completions = completion_messages
+        num_samples = len(questions)
+        # print(f"Computing rewards for {num_samples} samples on device {device}")
+        num_funcs = len(self.reward_funcs)
+        # 在当前 device 上创建张量
+        rewards_per_func = torch.zeros((num_samples, num_funcs), device=device)
+
+        # 1. 逐个 reward 函数计算
+        for i, reward_func in enumerate(self.reward_funcs):
+            # 抽取 inputs 中所有除 prompt/completion 以外的 key
+            keys = [k for k in inputs[0].keys() if k not in ("prompt", "completion")]
+            reward_kwargs = {
+                key: [example[key] for example in inputs]
+                for key in keys
+            }
+            if any(img is not None for img in images):
+                reward_kwargs["images"] = [example.get("image") for example in inputs]
+
+            # 调用 reward 函数
+            out = reward_func(
+                questions=questions,
+                completions=completions,
+                **reward_kwargs
             )
-            #  这里生成的 prompt_inputs 只有 "input_ids" 和 "attention_mask"。
-        ########################################################################
+            print(f"[{reward_func.__name__}] -> {out}")
 
-        # 4. 把 tokenizer 输出的张量搬到正确设备（GPU/TPU/CPU）上
-        prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
-        prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-        # 此时 prompt_ids.shape == (batch_size, seq_len)，prompt_mask.shape == (batch_size, seq_len)
+            # None 转 NaN，并放到 device 上
+            out = [r if r is not None else torch.nan for r in out]
+            rewards_per_func[:, i] = torch.tensor(out, dtype=torch.float32, device=device)
+
+        # 2. 警告：如果某一行所有函数都返回 None
+        all_nan_mask = torch.isnan(rewards_per_func).all(dim=1)
+        if all_nan_mask.any():
+            idx = all_nan_mask.nonzero(as_tuple=True)[0][0].item()
+            bad_kwargs = {k: v[idx] for k, v in reward_kwargs.items()}
+            bad_kwargs["prompt"] = questions[idx]
+            bad_kwargs["completion"] = completions[idx]
+            if any(img is not None for img in images):
+                bad_kwargs["image"] = images[idx]
+            warnings.warn(
+                f"All reward functions returned None for sample {idx}, kwargs: {bad_kwargs!r}"
+            )
+
+        # # 3. 多卡 all_gather
+        # if dist.is_initialized():
+        #     world_size = dist.get_world_size()
+        #     gathered = [torch.zeros_like(rewards_per_func) for _ in range(world_size)]
+        #     dist.all_gather(gathered, rewards_per_func)
+        #     # 拼接成 (world_batch_size, num_funcs)
+        #     rewards_per_func = torch.cat(gathered, dim=0)
+
+        # 4. 应用权重并求和
+        weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)
+        final_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
+
+        # print(f"[Weights] {weights}")
+        # print(f"[Final Rewards] {final_rewards}")
+
+        return final_rewards
+
+    def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]):
+        '''
+        Prepare several things:
+        1. prompt_completion_ids: (B, L)
+        2. logits_to_keep: (B, L)
+        3. reward
+        For further loss calculation
+        args:
+            input: dataset dict, each element is a dict with keys:
+                - "question": str, the prompt question
+                - "image": PIL.Image or None, the image if available
+            output: A dict with keys:
+                - "prompt_completion_ids": torch.Tensor, shape (B, L)
+                - "logits_to_keep": torch.Tensor, shape (B, L)
+                - "rewards"
+        '''
+        # prepare hardware device
+        device = self.accelerator.device
         
-        # 5. 从 prompt_inputs 拿出图像对应的特征张量（如果有）
-        pixel_values = prompt_inputs.get("pixel_values")       # 形状 (batch_size, 3, H, W) 或 None
-        image_grid_thw = prompt_inputs.get("image_grid_thw")   # 形状 (batch_size, G, T, H, W) 或 None
-
-        # 6. 如果有限制最大 prompt 长度，就截断最右侧
-        if self.max_prompt_length is not None:
-            prompt_ids = prompt_ids[:, -self.max_prompt_length:]
-            prompt_mask = prompt_mask[:, -self.max_prompt_length:]
-
-        # 7. 如果模型权重是新步数，就把模型放到 vLLM
+        # prepare inference data
+        prompts = [x["question"] for x in inputs]
+        answers = [x["answer"] for x in inputs] if "answer" in inputs[0] else None
+        images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]
+        
+        # upload the new model weights to vllm
         if self.state.global_step != self._last_loaded_step:
             self._move_model_to_vllm()
             self._last_loaded_step = self.state.global_step
-
-        #############################################################
-        # 8. 收集（gather）所有进程上的 prompts 和 images （原始）  #
-        #############################################################
-        #    后面要把它们一起发给 vLLM 服务端做生成；只是收集最原始的 raw prompts & raw images（PIL或ndarray）
-        all_prompts = gather_object(prompts)   # List[str]，长度=world_batch_size
-        all_images = gather_object(images)     # List[PIL.Image or np.ndarray or None]，同长度
-
-        #############################################################
-        # 9. 只有主进程才真正调用 vLLM 服务做“生成”。               #
-        #    因为无论文本还是图文，都要在同一端并行生成，然后广播到各进程。#
-        #############################################################
+        
+        # prepare chat template for vllm inference
+        multimodal_inputs = self._prepare_multimodal_chat_template(prompts, images)
+        
+        # gather all prompts and images from all processes, env step
+        all_multimodal_inputs = gather_object(multimodal_inputs)
         if self.accelerator.is_main_process:
-            multimodal_inputs = []
-            for prompt, image in zip(all_prompts, all_images):
-                initial_prompts = CROP_SYSTEM_PROMPT.format(
-                tool_descriptions=CROP_TOOL_DESCRIPTION,
-                tool_example=CROP_TOOL_EXAMPLE
-                ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'  # 添加系统提示  
-                if image is not None:
-                    buffered = io.BytesIO()
-                    image.save(buffered, format="PNG")
-                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    initial_message = [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": initial_prompts},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}}
-                                ]
-                            }
-                        ]
-                else:
-                    # 纯文本输入
-                    initial_message = [
-                            {
-                                "role": "user",
-                                "content": [
-                                    {"type": "text", "text": initial_prompts},
-                                ]
-                            }
-                        ]
-                multimodal_inputs.append(initial_message)
-            # 此时 multimodal_inputs 是一个长度等于 world_batch_size 的列表，
-            # 其中每个元素形如 {"prompt": "...", "multi_modal_data": {"image": <PIL>} } 
-            # 或者 {"prompt": "..."}。
-
-            # 真正调用环境生成器（vLLM）：
             env_result = self.env.generate(
-                prompts=multimodal_inputs,   # 多模态形式发出去
-                llm=self.vllm_client,        # vLLM 客户端
+                prompts=all_multimodal_inputs, 
+                llm=self.vllm_client, 
                 sampling_params=self.sampling_params,
             )
-            # 返回值 env_result 中应该包含：
-            #   - 'ids'：长度 = world_batch_size * num_generations，
-            #       每个元素是某次生成的 token id list
-            #   - 'messages'：长度 = world_batch_size * num_generations，
-            #       每个元素是对应原始“prompt+image”后续生成的 message dict 列表
-            #   - 'mask'：长度 = world_batch_size * num_generations，
-            #       每个元素是生成长度对应的 attention mask（0/1列表）
-            completion_ids = env_result['ids']
-            completion_messages = env_result['messages']
-            completion_mask = env_result['mask']
+            all_prompts = env_result['all_prompts'] # calculate log_pb
+            all_images = env_result['images'] # calculate log_pb
+            all_messages = env_result['all_messages'] # calculate rewards
         else:
-            # 非主进程先占位，等待广播
-            completion_ids = [None] * len(all_prompts)
-            completion_messages = [None] * len(all_prompts)
-            completion_mask = [None] * len(all_prompts)
+            # Non main processes will wait for the main process to finish
+            all_prompts = [None] * len(all_multimodal_inputs)
+            all_images = [None] * len(all_multimodal_inputs)
+            all_messages = [None] * len(all_multimodal_inputs)
+            
+        all_prompts = broadcast_object_list(all_prompts, from_process=0)
+        all_images = broadcast_object_list(all_images, from_process=0)
+        all_messages = broadcast_object_list(all_messages, from_process=0)
 
-        ############################################################
-        # 10. 广播主进程的 “completion_ids/messages/mask” 给各个子进程  #
-        ############################################################
-        completion_ids = broadcast_object_list(completion_ids, from_process=0)
-        completion_messages = broadcast_object_list(completion_messages, from_process=0)
-        completion_mask = broadcast_object_list(completion_mask, from_process=0)
-
-        ############################################################
-        # 11. 根据当前进程的 index，把全体 batch 切片到本地 batch 大小 #
-        ############################################################
-        #    world_batch_size = num_devices * local_batch_size
         process_slice = slice(
             self.accelerator.process_index * len(prompts),
             (self.accelerator.process_index + 1) * len(prompts),
         ) # len(prompts) 是每个进程的本地 batch 大小
-        completion_ids = completion_ids[process_slice]
-        completion_messages = completion_messages[process_slice]
-        completion_mask = completion_mask[process_slice]
-        # 现在每个进程拿到自己的“部分生成结果”：
-        #   completion_ids.shape == (local_batch_size, gen_len_unpadded_list)
-        #   completion_messages: List(length=local_batch_size) 每个元素是 message dict
-        #   completion_mask: List(length=local_batch_size) 每个元素是未 pad 的 mask list
+        # Back to each process's local batch size
+        all_prompts = all_prompts[process_slice]
+        all_images = all_images[process_slice]
+        all_messages = all_messages[process_slice]
+        
+        # OK, now let's use processor to get the input_ids(Will be paded in processor)/attention_mask/pixel_values/image_grid_thw
+        # convert prompts to correct format
+        all_prompts_one_image_pad = []
+        for prompt in all_prompts:
+            prompt = re.sub(r'(?:<\|image_pad\|>)+', '<|image_pad|>', prompt)
+            all_prompts_one_image_pad.append(prompt)
+            
+        # debug
+        total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
+        # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
+        total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
+        # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
+        
+        
+        model_inputs = self.prepare_model_inputs(prompts_text = all_prompts_one_image_pad, 
+                                                images = all_images, return_tensors="pt", padding=True, 
+                                                padding_side="left", add_special_tokens=False)
+        model_inputs = Trainer._prepare_inputs(self, model_inputs)
 
-        ##################################################
-        # 12. 把每个 token_id list 转成 Tensor，再 pad 成统一长度 #
-        ##################################################
-        completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
-        completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id)
-        # 现在 completion_ids.shape == (local_batch_size, max_gen_len)
+        input_ids = model_inputs["input_ids"]
+        
+        #debug
+        mask = input_ids == 151655
+        count = int(mask.sum().item())
+        # print(f"Token ID 151655 出现了 {count} 次")
+        
+        attention_mask = model_inputs["attention_mask"]
+        pixel_values = model_inputs["pixel_values"]
+        image_grid_thw = model_inputs["image_grid_thw"]
+        # print(f"Input IDs shape: {input_ids.shape}, Attention mask shape: {attention_mask.shape}"
+        #       f", Pixel values shape: {pixel_values.shape}, Image grid shape: {image_grid_thw.shape}")
 
-        completion_mask = [torch.tensor(mask, device=device) for mask in completion_mask]
-        completion_mask = pad(completion_mask, padding_value=0)
-        # 现在 completion_mask.shape == (local_batch_size, max_gen_len)
+        logits_to_keep = self.generate_logits_to_keep_batch(
+            input_ids, 
+            start_sequence=[151644, 77091, 198], #<|im_start|>assistant\n
+            end_sequence=[198, 151644, 872, 198] #\n<|im_start|>user\n
+        )
+        
+        # reward fuction test and logic
+        inputs = [{"task": "vg", "answer": answer} for answer in answers]
+        rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
+                                       images = all_images, 
+                                       completion_messages = all_messages, 
+                                       device = device)
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask, 
+            "pixel_values": pixel_values, 
+            "image_grid_thw": image_grid_thw,
+            "logits_to_keep": logits_to_keep, 
+            "rewards": rewards, 
+        }
+        
+    def selective_log_softmax(self, logits, index):
+        """
+        A memory-efficient implementation of the common `log_softmax -> gather` operation.
 
-        ##################################################
-        # 13. 拼接 prompt_ids 与 completion_ids，得到完整上下文  #
-        ##################################################
-        prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
-        attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
-        # prompt_completion_ids.shape == (local_batch_size, prompt_len + gen_len)
-        # attention_mask    == (local_batch_size, prompt_len + gen_len)
+        This function is equivalent to the following naive implementation:
+        ```python
+        logps = torch.gather(logits.log_softmax(-1), dim=-1, index=index.unsqueeze(-1)).squeeze(-1)
+        ```
 
-        logits_to_keep = completion_ids.size(1)
-        # logits_to_keep = gen_len，告知后续只保留“本轮生成那部分”的 log_prob
+        Args:
+            logits (`torch.Tensor`):
+                Logits tensor of shape `(..., num_classes)`.
+            index (`torch.Tensor`):
+                Index tensor of shape `(...)`, specifying the positions to gather from the log-softmax output.
 
-        #####################################################
-        # 14. 在 no_grad 下，用本地模型或参照模型算 per-token logp #
-        #####################################################
+        Returns:
+            `torch.Tensor`:
+                Gathered log probabilities with the same shape as `index`.
+        """
+        if logits.dtype in [torch.float32, torch.float64]:
+            selected_logits = torch.gather(logits, dim=-1, index=index.unsqueeze(-1)).squeeze(-1)
+            # loop to reduce peak mem consumption
+            logsumexp_values = torch.stack([torch.logsumexp(lg, dim=-1) for lg in logits])
+            per_token_logps = selected_logits - logsumexp_values  # log_softmax(x_i) = x_i - logsumexp(x)
+        else:
+            # logsumexp approach is unstable with bfloat16, fall back to slightly less efficent approach
+            per_token_logps = []
+            for row_logits, row_labels in zip(logits, index):  # loop to reduce peak mem consumption
+                row_logps = F.log_softmax(row_logits, dim=-1)
+                row_per_token_logps = row_logps.gather(dim=-1, index=row_labels.unsqueeze(-1)).squeeze(-1)
+                per_token_logps.append(row_per_token_logps)
+            per_token_logps = torch.stack(per_token_logps)
+        return per_token_logps
+
+    def _get_per_token_logps(
+        self,
+        model,
+        input_ids,         # Tensor of shape (B, S)
+        attention_mask,    # Tensor of shape (B, S)
+        pixel_values,
+        image_grid_thw,    
+        logits_to_keep,    # List[List[int]] of length B, each inner list length S (0/1 mask)
+        batch_size=None
+    ) -> torch.Tensor:
+        """
+        从完整 input_ids 里，提取 logits_to_keep 标记位置对应的 token
+        的 log‐probs 并返回一个 (B, L_max) 的 tensor，其中 L_max 是本批
+        中单条样本被标记位置总数的最大值。输出中每行对应一条样本，
+        在被标记（值为1）的那些位置上存 log‐prob，未被标记的位置用0填充。
+        
+        参数：
+        - model:           返回 logits 的 HuggingFace 模型
+        - input_ids:       Tensor(B, S)，包含用户+助手所有 token 序列
+        - attention_mask:  Tensor(B, S)，同样对应 input_ids
+        - logits_to_keep:  List[List[int]]，大小 (B, S)，元素 0/1。1 表示该位置
+                            属于助手生成内容，需要计算 log‐prob；0 表示跳过。
+        - batch_size:      int，可选。若不为 None，则按子批大小分块计算，减少显存峰值。
+        
+        返回：
+        - Tensor of shape (B, L_max)，每行代表一条样本中“标记 = 1”的那些 token
+            的 log‐probs，左侧用 0 填充到相同宽度 L_max。
+        """
+        B, S = input_ids.size()
+        # print(">>> get_per_token_logps input_ids shape:", input_ids.shape)
+        batch_size = batch_size or B
+        all_logps = []  # 用来存储每个 batch 的 log‐probs
+        logits_to_keep = torch.tensor(logits_to_keep, dtype=torch.long, device=input_ids.device)
+        # print(">>> logits_to_keep shape:", logits_to_keep, logits_to_keep.shape)
+        
+        for i in range(0, B, batch_size):
+            input_ids_batch      = input_ids[i : i + batch_size]       # (B_chunk, S)
+            attention_batch      = attention_mask[i : i + batch_size]  # (B_chunk, S)
+            mask_batch           = logits_to_keep[i : i + batch_size]  # List length B_chunk, each is list of length S
+            # pixel_values_batch=pixel_values[i : i + batch_size]
+            # image_grid_thw_batch=image_grid_thw[i : i + batch_size]
+
+            B_chunk, _ = input_ids_batch.shape
+            # 1) 前向计算整条 seq 的 logits （(B_chunk, S, V)）
+            outputs = model(
+                input_ids=input_ids_batch,
+                attention_mask=attention_batch,
+                pixel_values=pixel_values,
+                image_grid_thw=image_grid_thw,
+            )
+            # print(">>> outputs:", outputs)
+            full_logits = outputs.logits  # (B_chunk, S, V)
+            # print(">>> full_logits:", full_logits, full_logits.shape)
+            full_logits = full_logits[:, :-1, :] # Change shape to (B_chunk, S-1, V), del the last token logits
+            input_ids_batch = input_ids_batch[:, 1: ]  # (B_chunk, S-1), del the first token input_ids
+            logits_to_keep = logits_to_keep[:, 1: ]  # (B_chunk, S-1), do the same thing as input_ids_batch
+            keep_mask          = logits_to_keep.bool()    # → (B, S-1)
+
+            # 2) 计算哪些列（时间步）至少有一个样本需要保留
+            col_mask = keep_mask.any(dim=0)               # → (S-1,), dtype=torch.bool
+
+            # 3) 用这个列掩码同步裁剪三者
+            logits_to_keep = logits_to_keep[:, col_mask]  # → (B, S',)
+            logits       = full_logits   [:, col_mask, :]  # → (B, S', V)
+            # print(">>> logits after col_mask:", logits, logits.shape)
+            input_ids_batch    = input_ids_batch[:, col_mask]     # → (B, S')
+            # print(">>> input_ids_batch after col_mask:", input_ids_batch, input_ids_batch.shape)
+            keep_mask    = keep_mask     [:, col_mask]     # → (B, S')
+            # print(">>> keep_mask after col_mask:", keep_mask, keep_mask.shape)
+            
+
+            # 4) 计算批次级别的 log‐probs：传入 (B_chunk, L_max, V) 和 (B_chunk, L_max)
+            #    selective_log_softmax 会对每个 batch 中的行分别计算
+            single_logps_batch = self.selective_log_softmax(
+                logits,    # (B_chunk, L_max, V)
+                input_ids_batch        # (B_chunk, L_max)
+            )  # 返回 (B_chunk, L_max)
+            all_logps.append(single_logps_batch)
+
+        result = torch.cat(all_logps, dim=0)  # (B, L_max_overall)
+        # print(">>> all log-prob:", result)
+        return result, logits_to_keep
+
+    def compute_loss(self, model, inputs, num_items_in_batch=None):
+        # Compute the old_per_token_logps & ref_per_token_logps
         with torch.no_grad():
-            # （1）如果 num_iterations>1，需要计算 old_per_token_logps 供 PPO ratio 计算
             if self.num_iterations > 1:
-                old_per_token_logps = self._get_per_token_logps(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    pixel_values,       # 多模态特征
-                    image_grid_thw,     # 多模态网格
-                    logits_to_keep
+                old_per_token_logps,_ = self._get_per_token_logps(
+                    self.model, 
+                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                    pixel_values = inputs.get("pixel_values"),
+                    image_grid_thw = inputs.get("image_grid_thw"),
+                    logits_to_keep = inputs.get("logits_to_keep")
                 )
             else:
                 old_per_token_logps = None
@@ -412,362 +646,83 @@ class GRPOEnvTrainer(GRPOTrainer):
             if self.beta == 0.0:
                 ref_per_token_logps = None
             elif self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(
-                    self.ref_model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    pixel_values,
-                    image_grid_thw,
-                    logits_to_keep
+                ref_per_token_logps,_ =self._get_per_token_logps(
+                    self.ref_model, 
+                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                    pixel_values = inputs.get("pixel_values"),
+                    image_grid_thw = inputs.get("image_grid_thw"),
+                    logits_to_keep = inputs.get("logits_to_keep")
                 )
             else:
                 # 关闭 adapter 时当基线模型
                 with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(
-                        self.model,
-                        prompt_completion_ids,
-                        attention_mask,
-                        pixel_values,
-                        image_grid_thw,
-                        logits_to_keep
+                    ref_per_token_logps,_ = self._get_per_token_logps(
+                        self.model, 
+                        input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                        attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                        pixel_values = inputs.get("pixel_values"),
+                        image_grid_thw = inputs.get("image_grid_thw"),
+                        logits_to_keep = inputs.get("logits_to_keep")
                     )
+        
+        # Compute the per-token log probabilities for the model
+        per_token_logps,completion_mask = self._get_per_token_logps(
+            model, 
+            input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+            attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+            pixel_values = inputs.get("pixel_values"),
+            image_grid_thw = inputs.get("image_grid_thw"),
+            logits_to_keep = inputs.get("logits_to_keep")
+        )
+        # print(f"per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
+        # print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
 
-        ###########################################################################
-        # 15. 用 message dicts 作为 reward 函数的输入，开始对所有生成做打分    #
-        ###########################################################################
-        completions = completion_messages  # 仍然是 “message dict 列表”
-        rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
-        for i, reward_func in enumerate(self.reward_funcs):
-            # 把 inputs[0] 中除了 “prompt” 和 “completion” 以外的其他字段都拿出来
-            keys = [key for key in inputs[0] if key not in ["prompt", "completion"]]
-            reward_kwargs = {key: [example[key] for example in inputs] for key in keys}
-
-            # 如果存在图像，就一并把 images 列表放入 reward_kwargs
-            if any(img is not None for img in images):
-                reward_kwargs["images"] = [example.get("image") for example in inputs]
-
-            # reward_func 签名示例：reward_func(prompts=[str], completions=[msg_dict], images=[PIL], 其他字段=…)
-            output_reward_func = reward_func(
-                prompts=prompts,
-                completions=completions,
-                **reward_kwargs
+        # Compute the KL divergence between the model and the reference model
+        # https://arxiv.org/abs/2402.03300 Eq (4)
+        if self.beta != 0.0:
+            per_token_kl = (
+                torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
             )
 
-            # 把 None 转成 NaN，方便后续 nanmean/nansum
-            output_reward_func = [
-                reward if reward is not None else torch.nan
-                for reward in output_reward_func
-            ]
-            rewards_per_func[:, i] = torch.tensor(
-                output_reward_func, dtype=torch.float32, device=device
-            )
-
-        ###############################################
-        # 16. 如果某一行所有 reward 函数都返回 None，就警告 #
-        ###############################################
-        if torch.isnan(rewards_per_func).all(dim=1).any():
-            nan_row_idx = torch.isnan(rewards_per_func).all(dim=1).nonzero(as_tuple=True)[0][0]
-            row_reward_kwargs = {key: value[nan_row_idx] for key, value in reward_kwargs.items()}
-            row_reward_kwargs["prompt"] = prompts[nan_row_idx]
-            row_reward_kwargs["completion"] = completions[nan_row_idx]
-            if any(img is not None for img in images):
-                row_reward_kwargs["image"] = images[nan_row_idx]
-            warnings.warn(
-                f"All reward functions returned None for the following kwargs: {row_reward_kwargs}. "
-                "Please ensure that at least one reward function returns a valid reward."
-            )
-
-        ###############################################
-        # 17. 在多卡情况下，对 rewards_per_func 做 all_gather #
-        ###############################################
-        rewards_per_func = gather(rewards_per_func)
-        # 现在 rewards_per_func.shape == (world_batch_size, num_reward_funcs)
-
-        ##################################
-        # 18. 应用权重并对每条样本求和，得到总 reward #
-        ##################################
-        rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
-        # rewards.shape == (world_batch_size,)
-
-        ##########################################
-        # 19. 计算分组内的平均奖励与优势 (advantage) #
-        ##########################################
-        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
+        # Compute the advantages
+        rewards = inputs["rewards"] # (B，)
+        # print(f"rewards: {rewards}, shape: {rewards.shape}")
+        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1) # 计算组内reward均值 (B/n, n,)
+        # print(f"mean_grouped_rewards: {mean_grouped_rewards}, shape: {mean_grouped_rewards.shape}")
         # mean_grouped_rewards.shape == (world_batch_size / num_generations,)
 
         # 把每组平均值 repeat_interleave 回到 (world_batch_size,) 
         mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+        # print(f"mean_grouped_rewards: {mean_grouped_rewards}")
         advantages = (rewards - mean_grouped_rewards)
-
-        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
+        # print(f"advantages: {advantages}")
+        
+        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1) # 计算组内reward标准差
         std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
         if self.scale_rewards:
             advantages = advantages / (std_grouped_rewards + 1e-4)
-
-        #####################################################
-        # 20. 把 advantages 按当前进程 index 切片回本地大小   #
-        #####################################################
-        process_slice = slice(
-            self.accelerator.process_index * len(prompts),
-            (self.accelerator.process_index + 1) * len(prompts),
-        )
-        advantages = advantages[process_slice]
-        # 现在 advantages.shape == (local_batch_size,)
-
-        #######################################
-        # 21. 记录各项指标，供 TensorBoard/WandB 可视化 #
-        #######################################
-        mode = "eval" if self.control.should_evaluate else "train"
-
-        # 记录平均生成长度
-        completion_length = self.accelerator.gather_for_metrics(
-            completion_mask.sum(1)
-        ).float().mean().item()
-        self._metrics[mode]["completion_length"].append(completion_length)
-
-        # 对每个 reward function 记录 mean/std
-        for i, reward_func in enumerate(self.reward_funcs):
-            reward_func_name = reward_func.__name__
-            mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
-            self._metrics[mode][f"rewards/{reward_func_name}"].append(mean_rewards)
-            std_rewards = nanstd(rewards_per_func[:, i]).item()
-            self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
-
-        self._metrics[mode]["reward"].append(rewards.mean().item())
-        self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
-
-        ##########################################
-        # 22. （可选）打印 / 上传样本到 WandB, 包含图像信息 #
-        ##########################################
-        if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
-            print("Logging completions...")
-            prompts_to_log = gather_object(prompts)
-            completions_to_log = gather_object(completions)
-            images_to_log = gather_object(images)
-            rewards_to_log = rewards.tolist()
-
-            if self.accelerator.is_main_process:
-                if is_rich_available():
-                    # 打印带有“是否有图像”的示例
-                    sample_prompt = str(prompts_to_log[0][-1]["content"])
-                    if images_to_log[0] is not None:
-                        sample_prompt += " [包含图像]"
-                    print_prompt_completions_sample(
-                        [sample_prompt],
-                        [completions_to_log[0]],
-                        [rewards_to_log[0]],
-                        self.state.global_step,
-                    )
-                if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None:
-                    import pandas as pd
-
-                    table = {
-                        "step": [str(self.state.global_step)] * len(rewards),
-                        "prompt": prompts_to_log,
-                        "completion": completions_to_log,
-                        "reward": rewards.tolist(),
-                        "has_image": [img is not None for img in images_to_log],
-                    }
-                    df = pd.DataFrame(table)
-                    wandb.log({"completions": wandb.Table(dataframe=df)})
-
-        #####################################################
-        # 23. 返回所有供后续计算 loss 或保存的张量 / 数据       #
-        #####################################################
-        return {
-            "prompt_ids": prompt_ids,             # (local_batch_size, prompt_len)
-            "prompt_mask": prompt_mask,           # (local_batch_size, prompt_len)
-            "completion_ids": completion_ids,     # (local_batch_size, gen_len)
-            "completion_mask": completion_mask,   # (local_batch_size, gen_len)
-            "old_per_token_logps": old_per_token_logps,   # (local_batch_size, gen_len) 或 None
-            "ref_per_token_logps": ref_per_token_logps,   # (local_batch_size, gen_len) 或 None
-            "advantages": advantages,             # (local_batch_size,)
-            "pixel_values": pixel_values,         # (local_batch_size, 3, H, W) or None
-            "image_grid_thw": image_grid_thw,     # (local_batch_size, G, T, H, W) or None
-        }
-
-    # def _generate_and_score_completions(
-    #      self, inputs: dict[str, Union[torch.Tensor, Any]]   
-    # ) -> dict[str, Union[torch.Tensor, Any]]:
-    #     device = self.accelerator.device
-    #     prompts = [x["prompt"] for x in inputs] # type: ignore
-    #     prompts_text = [maybe_apply_chat_template(example, self.processing_class)["prompt"] for example in inputs] # type: ignore
-    #     prompt_inputs = self.processing_class(
-    #         prompts_text, return_tensors="pt", padding=True, padding_side="left", add_special_tokens=False # type: ignore
-    #     ) # type: ignore
-    #     prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs) # type: ignore
-    #     prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-
-    #     if self.max_prompt_length is not None:
-    #         prompt_ids = prompt_ids[:, -self.max_prompt_length :]
-    #         prompt_mask = prompt_mask[:, -self.max_prompt_length :]
-
-    #     if self.state.global_step != self._last_loaded_step:
-    #         self._move_model_to_vllm()
-    #         self._last_loaded_step = self.state.global_step
-
-    #     # Gather the original prompts in message dict form, not the text form
-    #     all_prompts = gather_object(prompts)
-    #     if self.accelerator.is_main_process:
-    #         env_result = self.env.generate(
-    #             prompts=all_prompts,
-    #             llm=self.vllm_client, # type: ignore
-    #             sampling_params=self.sampling_params,
-    #         )
-    #         completion_ids = env_result['ids']
-    #         completion_messages = env_result['messages']
-    #         completion_mask = env_result['mask']
-
-    #     else:
-    #         completion_ids = [None] * len(all_prompts)
-    #         completion_messages = [None] * len(all_prompts)
-    #         completion_mask = [None] * len(all_prompts)
-
-    #     completion_ids = broadcast_object_list(completion_ids, from_process=0)
-    #     completion_messages = broadcast_object_list(completion_messages, from_process=0)
-    #     completion_mask = broadcast_object_list(completion_mask, from_process=0)
-
-    #     process_slice = slice(
-    #         self.accelerator.process_index * len(prompts),
-    #         (self.accelerator.process_index + 1) * len(prompts),
-    #     )
-
-    #     completion_ids = completion_ids[process_slice]
-    #     completion_messages = completion_messages[process_slice]
-    #     completion_mask = completion_mask[process_slice]
-
-    #     # Pad + mask after per-sequence EOS tokens
-    #     completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids]
-    #     completion_ids = pad(completion_ids, padding_value=self.processing_class.pad_token_id) # type: ignore
-
-    #     completion_mask = [torch.tensor(mask, device=device) for mask in completion_mask]
-    #     completion_mask = pad(completion_mask, padding_value=0)
-
-    #     prompt_completion_ids = torch.cat([prompt_ids, completion_ids], dim=1)
-    #     attention_mask = torch.cat([prompt_mask, completion_mask], dim=1) # (B, P+C)
         
-    #     logits_to_keep = completion_ids.size(1)
+        # Compute the loss
+        # https://arxiv.org/abs/2402.03300 Eq (3)
+        coef_1 = torch.exp(per_token_logps - old_per_token_logps)
+        coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
+        per_token_loss1 = coef_1 * advantages.unsqueeze(1)
+        per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+        per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        if self.beta != 0.0:
+            per_token_loss = per_token_loss + self.beta * per_token_kl
 
-    #     with torch.no_grad():
-    #         # When using num_iterations == 1, old_per_token_logps == per_token_logps, so we can skip it's
-    #         # computation here, and use per_token_logps.detach() instead.
-    #         if self.num_iterations > 1:
-    #             old_per_token_logps = self._get_per_token_logps(
-    #                 self.model, prompt_completion_ids, attention_mask, logits_to_keep
-    #             )
-    #         else:
-    #             old_per_token_logps = None
-
-    #         if self.beta == 0.0:
-    #             ref_per_token_logps = None
-    #         elif self.ref_model is not None:
-    #             ref_per_token_logps = self._get_per_token_logps(
-    #                 self.ref_model, prompt_completion_ids, attention_mask, logits_to_keep
-    #             )
-    #         else:
-    #             with self.accelerator.unwrap_model(self.model).disable_adapter():
-    #                 ref_per_token_logps = self._get_per_token_logps(
-    #                     self.model, prompt_completion_ids, attention_mask, logits_to_keep
-    #                 )
-
-    #     # use message dicts for reward function inputs
-    #     completions = completion_messages
-    #     rewards_per_func = torch.zeros(len(prompts), len(self.reward_funcs), device=device)
-    #     for i, reward_func in enumerate(self.reward_funcs):
-    #         # Repeat all input columns (but "prompt" and "completion") to match the number of generations
-    #         keys = [key for key in inputs[0] if key not in ["prompt", "completion"]] # type: ignore
-    #         reward_kwargs = {key: [example[key] for example in inputs] for key in keys} # type: ignore
-    #         output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs) # type: ignore
-            
-    #         output_reward_func = [reward if reward is not None else torch.nan for reward in output_reward_func]
-    #         rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
-
-    #     # If all reward functions return None for a given row, issue a detailed warning
-    #     if torch.isnan(rewards_per_func).all(dim=1).any():
-    #         nan_row_idx = torch.isnan(rewards_per_func).all(dim=1).nonzero(as_tuple=True)[0][0]
-    #         row_reward_kwargs = {key: value[nan_row_idx] for key, value in reward_kwargs.items()} # type: ignore
-    #         row_reward_kwargs["prompt"] = prompts[nan_row_idx]
-    #         row_reward_kwargs["completion"] = completions[nan_row_idx] # type: ignore
-    #         warnings.warn(
-    #             f"All reward functions returned None for the following kwargs: {row_reward_kwargs}. "
-    #             "Please ensure that at least one reward function returns a valid reward."
-    #         )
-
-
-    #     rewards_per_func = gather(rewards_per_func)
-
-    #     # Apply weights to each reward function's output and sum
-    #     rewards = (rewards_per_func * self.reward_weights.to(device).unsqueeze(0)).nansum(dim=1)
-
-    #     # Compute grouped-wise rewards
-    #     mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1) # type: ignore
-
-    #     # Normalize the rewards to compute the advantages
-    #     mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0) # type: ignore
-    #     advantages = (rewards - mean_grouped_rewards)
+        if self.loss_type == "grpo":
+            loss = ((per_token_loss * completion_mask).sum(-1) / completion_mask.sum(-1).clamp(min=1.0)).mean()
+        elif self.loss_type == "bnpo":
+            loss = (per_token_loss * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
+        elif self.loss_type == "dr_grpo":
+            loss = (per_token_loss * completion_mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+        # print(f"Computed loss: {loss}")
         
-    #     std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1) # type: ignore
-    #     std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0) # type: ignore
-    #     if self.scale_rewards:
-    #         # Scale the rewards to be between 0 and 1
-    #         advantages = advantages / (std_grouped_rewards + 1e-4)
+        return loss
 
-    #     # Slice to keep only the local part of the data
-    #     process_slice = slice(
-    #         self.accelerator.process_index * len(prompts),
-    #         (self.accelerator.process_index + 1) * len(prompts),
-    #     )
-    #     advantages = advantages[process_slice]
 
-    #     # Log the metrics
-    #     mode = "eval" if self.control.should_evaluate else "train"
-
-    #     completion_length = self.accelerator.gather_for_metrics(completion_mask.sum(1)).float().mean().item() # type: ignore
-    #     self._metrics[mode]["completion_length"].append(completion_length)
-
-    #     # Calculate mean reward per function, but only for samples where the function was applied
-    #     for i, reward_func in enumerate(self.reward_funcs):
-    #         reward_func_name = reward_func.__name__ # type: ignore  
-    #         # Only calculate mean for samples where this reward function was applied (non-NaN values)
-    #         mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
-    #         self._metrics[mode][f"rewards/{reward_func_name}"].append(mean_rewards)
-    #         std_rewards = nanstd(rewards_per_func[:, i]).item()
-    #         self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
-    #     self._metrics[mode]["reward"].append(rewards.mean().item())
-    #     self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item()) # type: ignore
-
-    #     if self.log_completions and self.state.global_step % self.args.logging_steps == 0:
-    #         prompts_to_log = gather_object(prompts)
-    #         completions_to_log = gather_object(completions)
-    #         rewards_to_log = rewards.tolist()
-
-    #         if self.accelerator.is_main_process:
-    #             if is_rich_available():
-    #                 print_prompt_completions_sample(
-    #                     [str(prompts_to_log[0][-1]["content"])],
-    #                     [completions_to_log[0]],
-    #                     [rewards_to_log[0]],
-    #                     self.state.global_step,
-    #                 )
-    #             if self.args.report_to and "wandb" in self.args.report_to and wandb.run is not None: # type: ignore
-    #                 import pandas as pd
-
-    #                 # For logging
-    #                 table = {
-    #                     "step": [str(self.state.global_step)] * len(rewards),
-    #                     "prompt": prompts_to_log,
-    #                     "completion": completions_to_log,
-    #                     "reward": rewards.tolist(),
-    #                 }
-    #                 df = pd.DataFrame(table)
-    #                 wandb.log({"completions": wandb.Table(dataframe=df)}) # type: ignore
-
-    #     return {
-    #         "prompt_ids": prompt_ids,
-    #         "prompt_mask": prompt_mask,
-    #         "completion_ids": completion_ids,
-    #         "completion_mask": completion_mask,
-    #         "old_per_token_logps": old_per_token_logps,
-    #         "ref_per_token_logps": ref_per_token_logps,
-    #         "advantages": advantages,
-    #     }

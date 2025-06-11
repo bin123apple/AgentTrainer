@@ -3,7 +3,7 @@
 import atexit
 import logging
 import time
-from typing import Optional
+from typing import Optional, List, Union, Dict, Any
 
 import requests
 from requests import ConnectionError
@@ -169,7 +169,7 @@ class VLLMClient:
 
     def chat(
         self,
-        messages: list[list[dict[str, str]]],
+        messages: List[List[dict[str, Union[str, List[dict]]]]],
         n: int = 1,
         repetition_penalty: float = 1.0,
         temperature: float = 1.0,
@@ -182,7 +182,7 @@ class VLLMClient:
         include_stop_str_in_output: bool = False,
         skip_special_tokens: bool = True,
         spaces_between_special_tokens: bool = True,
-    ) -> dict[str, list]:
+    ) -> Dict[str, Union[List[Any], str]]:
         """
         Generates completions for the provided prompts.
         """

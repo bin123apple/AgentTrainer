@@ -1,0 +1,1028 @@
+nohup: ignoring input
+[2025-06-11 20:18:14,715] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+W0611 20:18:18.570000 3941626 site-packages/torch/distributed/run.py:792] 
+W0611 20:18:18.570000 3941626 site-packages/torch/distributed/run.py:792] *****************************************
+W0611 20:18:18.570000 3941626 site-packages/torch/distributed/run.py:792] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0611 20:18:18.570000 3941626 site-packages/torch/distributed/run.py:792] *****************************************
+INFO 06-11 20:18:25 [importing.py:53] Triton module has been replaced with a placeholder.
+INFO 06-11 20:18:25 [importing.py:53] Triton module has been replaced with a placeholder.
+INFO 06-11 20:18:26 [importing.py:53] Triton module has been replaced with a placeholder.
+INFO 06-11 20:18:26 [importing.py:53] Triton module has been replaced with a placeholder.
+INFO 06-11 20:18:26 [importing.py:53] Triton module has been replaced with a placeholder.
+INFO 06-11 20:18:26 [__init__.py:239] Automatically detected platform cuda.
+INFO 06-11 20:18:26 [__init__.py:239] Automatically detected platform cuda.
+INFO 06-11 20:18:26 [__init__.py:239] Automatically detected platform cuda.
+INFO 06-11 20:18:26 [__init__.py:239] Automatically detected platform cuda.
+INFO 06-11 20:18:26 [__init__.py:239] Automatically detected platform cuda.
+[2025-06-11 20:18:30,421] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2025-06-11 20:18:30,426] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2025-06-11 20:18:30,428] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2025-06-11 20:18:30,428] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+[2025-06-11 20:18:30,432] [INFO] [real_accelerator.py:254:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+从 /mnt/data1/processed_datasets/uground_processed_500 加载预处理数据...从 /mnt/data1/processed_datasets/uground_processed_500 加载预处理数据...
+
+从 /mnt/data1/processed_datasets/uground_processed_500 加载预处理数据...从 /mnt/data1/processed_datasets/uground_processed_500 加载预处理数据...
+从 /mnt/data1/processed_datasets/uground_processed_500 加载预处理数据...
+
+数据集加载完成，大小: 5704
+2. 分割训练集和验证集...
+数据集加载完成，大小: 5704
+2. 分割训练集和验证集...数据集加载完成，大小: 5704
+
+2. 分割训练集和验证集...
+数据集加载完成，大小: 5704
+2. 分割训练集和验证集...
+数据集加载完成，大小: 5704
+2. 分割训练集和验证集...
+训练集大小: 5646
+验证集大小: 58
+3. 初始化工具环境...
+训练集大小: 5646
+return_description:  (Tuple)验证集大小: 58
+训练集大小: 5646
+3. 初始化工具环境...训练集大小: 5646
+
+
+验证集大小: 58验证集大小: 58
+
+3. 初始化工具环境...3. 初始化工具环境...
+
+return_description:  (Tuple)System Prompt:
+
+Your goal is to accurately provide a coordinate point based on the user’s description and the initial image they supplied. 
+You may use the crop tool to help you analyze and hone in on the target coordinate by placing the tool call inside <crop>...</crop> tags; 
+each time you call the crop tool, I will return the resulting cropped image to you. 
+In the end, you must place your selected coordinate inside <answer>...</answer> tags.
+
+The crop function is used like this: 
+
+crop(
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int]
+) -> Tuple[bytes, Tuple[int, int]]:
+    """
+    crop a rectangular region from an image.
+    Args:
+        top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
+        bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
+    Returns:
+        The cropped image.
+    """
+
+and here is an example of its use: 
+
+User: [ImageDisplayed] Could you identify the location of the “Close” button in this interface?
+
+Assistant: I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.  
+<crop>crop((10, 20), (110, 100))</crop>
+
+User: [ImageDisplayed]  # (cropped image returned)
+
+Assistant: In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. Converting back to the original image, it’s approximately at (45, 60).  
+<answer>(45, 60)</answer>
+
+Please note:
+1. You may call the crop tool multiple times if needed.
+2. Each crop is always taken relative to the initial image, not to any previously cropped image.
+3. Your final coordinate must also be given relative to the initial image.
+4. The <answer>...</answer> tags should contain only your final coordinate.
+4. 加载模型...return_description:  (Tuple)
+
+return_description:  (Tuple)using vlm module:
+ Qwen2VLModule
+System Prompt:
+Your goal is to accurately provide a coordinate point based on the user’s description and the initial image they supplied. 
+You may use the crop tool to help you analyze and hone in on the target coordinate by placing the tool call inside <crop>...</crop> tags; 
+each time you call the crop tool, I will return the resulting cropped image to you. 
+In the end, you must place your selected coordinate inside <answer>...</answer> tags.
+
+The crop function is used like this: 
+
+crop(
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int]
+) -> Tuple[bytes, Tuple[int, int]]:
+    """
+    crop a rectangular region from an image.
+    Args:
+        top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
+        bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
+    Returns:
+        The cropped image.
+    """
+
+and here is an example of its use: 
+
+User: [ImageDisplayed] Could you identify the location of the “Close” button in this interface?
+
+Assistant: I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.  
+<crop>crop((10, 20), (110, 100))</crop>
+
+User: [ImageDisplayed]  # (cropped image returned)
+
+Assistant: In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. Converting back to the original image, it’s approximately at (45, 60).  
+<answer>(45, 60)</answer>
+
+Please note:
+1. You may call the crop tool multiple times if needed.
+2. Each crop is always taken relative to the initial image, not to any previously cropped image.
+3. Your final coordinate must also be given relative to the initial image.
+4. The <answer>...</answer> tags should contain only your final coordinate.
+System Prompt:4. 加载模型...
+
+Your goal is to accurately provide a coordinate point based on the user’s description and the initial image they supplied. 
+You may use the crop tool to help you analyze and hone in on the target coordinate by placing the tool call inside <crop>...</crop> tags; 
+each time you call the crop tool, I will return the resulting cropped image to you. 
+In the end, you must place your selected coordinate inside <answer>...</answer> tags.
+
+The crop function is used like this: 
+
+crop(
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int]
+) -> Tuple[bytes, Tuple[int, int]]:
+    """
+    crop a rectangular region from an image.
+    Args:
+        top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
+        bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
+    Returns:
+        The cropped image.
+    """
+
+and here is an example of its use: 
+
+User: [ImageDisplayed] Could you identify the location of the “Close” button in this interface?
+
+Assistant: I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.  
+<crop>crop((10, 20), (110, 100))</crop>
+
+User: [ImageDisplayed]  # (cropped image returned)
+
+Assistant: In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. Converting back to the original image, it’s approximately at (45, 60).  
+<answer>(45, 60)</answer>
+
+Please note:
+1. You may call the crop tool multiple times if needed.
+2. Each crop is always taken relative to the initial image, not to any previously cropped image.
+3. Your final coordinate must also be given relative to the initial image.
+4. The <answer>...</answer> tags should contain only your final coordinate.using vlm module:
+ 4. 加载模型...Qwen2VLModule
+
+using vlm module:System Prompt: 
+Qwen2VLModule
+Your goal is to accurately provide a coordinate point based on the user’s description and the initial image they supplied. 
+You may use the crop tool to help you analyze and hone in on the target coordinate by placing the tool call inside <crop>...</crop> tags; 
+each time you call the crop tool, I will return the resulting cropped image to you. 
+In the end, you must place your selected coordinate inside <answer>...</answer> tags.
+
+The crop function is used like this: 
+
+crop(
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int]
+) -> Tuple[bytes, Tuple[int, int]]:
+    """
+    crop a rectangular region from an image.
+    Args:
+        top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
+        bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
+    Returns:
+        The cropped image.
+    """
+
+and here is an example of its use: 
+
+User: [ImageDisplayed] Could you identify the location of the “Close” button in this interface?
+
+Assistant: I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.  
+<crop>crop((10, 20), (110, 100))</crop>
+
+User: [ImageDisplayed]  # (cropped image returned)
+
+Assistant: In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. Converting back to the original image, it’s approximately at (45, 60).  
+<answer>(45, 60)</answer>
+
+Please note:
+1. You may call the crop tool multiple times if needed.
+2. Each crop is always taken relative to the initial image, not to any previously cropped image.
+3. Your final coordinate must also be given relative to the initial image.
+4. The <answer>...</answer> tags should contain only your final coordinate.训练集大小: 5646
+
+4. 加载模型...验证集大小: 58
+
+using vlm module:3. 初始化工具环境... 
+Qwen2VLModule
+return_description:  (Tuple)
+System Prompt:
+Your goal is to accurately provide a coordinate point based on the user’s description and the initial image they supplied. 
+You may use the crop tool to help you analyze and hone in on the target coordinate by placing the tool call inside <crop>...</crop> tags; 
+each time you call the crop tool, I will return the resulting cropped image to you. 
+In the end, you must place your selected coordinate inside <answer>...</answer> tags.
+
+The crop function is used like this: 
+
+crop(
+    top_left: Tuple[int, int],
+    bottom_right: Tuple[int, int]
+) -> Tuple[bytes, Tuple[int, int]]:
+    """
+    crop a rectangular region from an image.
+    Args:
+        top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
+        bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
+    Returns:
+        The cropped image.
+    """
+
+and here is an example of its use: 
+
+User: [ImageDisplayed] Could you identify the location of the “Close” button in this interface?
+
+Assistant: I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.  
+<crop>crop((10, 20), (110, 100))</crop>
+
+User: [ImageDisplayed]  # (cropped image returned)
+
+Assistant: In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. Converting back to the original image, it’s approximately at (45, 60).  
+<answer>(45, 60)</answer>
+
+Please note:
+1. You may call the crop tool multiple times if needed.
+2. Each crop is always taken relative to the initial image, not to any previously cropped image.
+3. Your final coordinate must also be given relative to the initial image.
+4. The <answer>...</answer> tags should contain only your final coordinate.
+4. 加载模型...
+using vlm module: Qwen2VLModule
+[2025-06-11 20:18:32,276] [INFO] [comm.py:675:init_distributed] cdb=None
+[2025-06-11 20:18:32,276] [INFO] [comm.py:675:init_distributed] cdb=None
+[2025-06-11 20:18:32,276] [INFO] [comm.py:675:init_distributed] cdb=None
+[2025-06-11 20:18:32,276] [INFO] [comm.py:675:init_distributed] cdb=None
+[2025-06-11 20:18:32,276] [INFO] [comm.py:675:init_distributed] cdb=None
+[2025-06-11 20:18:32,276] [INFO] [comm.py:706:init_distributed] Initializing TorchBackend in DeepSpeed with backend nccl
+5. 初始化训练器...
+[2025-06-11 20:18:33,015] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+You are attempting to use Flash Attention 2.0 with a model not initialized on GPU. Make sure to move the model to GPU after initializing it on CPU with `model.to('cuda')`.
+5. 初始化训练器...
+[2025-06-11 20:18:33,180] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+You are attempting to use Flash Attention 2.0 with a model not initialized on GPU. Make sure to move the model to GPU after initializing it on CPU with `model.to('cuda')`.
+5. 初始化训练器...
+5. 初始化训练器...
+5. 初始化训练器...
+[2025-06-11 20:18:33,324] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+You are attempting to use Flash Attention 2.0 with a model not initialized on GPU. Make sure to move the model to GPU after initializing it on CPU with `model.to('cuda')`.
+[2025-06-11 20:18:33,336] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+You are attempting to use Flash Attention 2.0 with a model not initialized on GPU. Make sure to move the model to GPU after initializing it on CPU with `model.to('cuda')`.
+[2025-06-11 20:18:33,362] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+You are attempting to use Flash Attention 2.0 with a model not initialized on GPU. Make sure to move the model to GPU after initializing it on CPU with `model.to('cuda')`.
+[2025-06-11 20:18:35,612] [INFO] [partition_parameters.py:348:__exit__] finished initializing model - num_params = 729, num_elems = 8.29B
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.86it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.82it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.85it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.85it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.53it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.86it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.88it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.87it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.87it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.70it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.85it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.86it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.86it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.86it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.73it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.85it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.86it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.86it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.86it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.32it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.32it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.31it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.32it/s]
+Freezing vision modules...
+Freezing vision modules...
+Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.77it/s]Freezing vision modules...
+[2025-06-11 20:18:38,004] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:38,011] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:38,069] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.42it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.04it/s]
+Freezing vision modules...
+[2025-06-11 20:18:38,308] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+Freezing vision modules...
+[2025-06-11 20:18:38,728] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:38,811] [INFO] [partition_parameters.py:348:__exit__] finished initializing model - num_params = 1458, num_elems = 16.58B
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:01<00:04,  1.17s/it]Loading checkpoint shards:  20%|██        | 1/5 [00:01<00:04,  1.18s/it]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.59it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:01<00:04,  1.18s/it]Loading checkpoint shards:  20%|██        | 1/5 [00:01<00:05,  1.30s/it]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.73it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:02,  1.25it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:02,  1.24it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:02,  1.24it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:02,  1.17it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.78it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:02<00:01,  1.46it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:02<00:01,  1.46it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:02<00:01,  1.46it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:02<00:01,  1.39it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.60it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.82it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.60it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.60it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  1.79it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  1.79it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.22it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  1.79it/s]
+Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.54it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:03<00:00,  2.14it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:03<00:00,  1.62it/s]
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+You have video processor config saved in `preprocessor.json` file which is deprecated. Video processor configs should be saved in their own `video_preprocessor.json` file. You can rename the file or load and save the processor back which renames it automatically. Loading from `preprocessor.json` will be removed in v5.0.
+Setting pad_token_id and eos_token from tokenizer...
+Setting pad_token_id and eos_token from tokenizer...
+[2025-06-11 20:18:43,357] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+Setting pad_token_id and eos_token from tokenizer...
+Setting pad_token_id and eos_token from tokenizer...
+[2025-06-11 20:18:43,663] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+Setting pad_token_id and eos_token from tokenizer...
+[2025-06-11 20:18:43,800] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:43,898] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:43,927] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:43,982] [INFO] [partition_parameters.py:348:__exit__] finished initializing model - num_params = 2187, num_elems = 24.88B
+Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.75it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.49it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.84it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:02,  1.49it/s]Loading checkpoint shards:  20%|██        | 1/5 [00:00<00:03,  1.29it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.70it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.71it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.83it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.87it/s]Loading checkpoint shards:  40%|████      | 2/5 [00:01<00:01,  1.57it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.84it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.76it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.86it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.76it/s]Loading checkpoint shards:  60%|██████    | 3/5 [00:01<00:01,  1.66it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.85it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.80it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.80it/s]Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.86it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.57it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.18it/s]
+Loading checkpoint shards:  80%|████████  | 4/5 [00:02<00:00,  1.72it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.37it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.37it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.03it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.03it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.36it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  1.95it/s]
+Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.17it/s]Loading checkpoint shards: 100%|██████████| 5/5 [00:02<00:00,  2.02it/s]
+INFO 06-11 20:18:46 [utils.py:1055] Found nccl from library libnccl.so.2
+INFO 06-11 20:18:46 [pynccl.py:69] vLLM is using nccl==2.21.5
+[2025-06-11 20:18:47,407] [INFO] [logging.py:107:log_dist] [Rank 0] DeepSpeed info: version=0.17.0, git-hash=unknown, git-branch=unknown
+[2025-06-11 20:18:47,407] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:47,407] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:47,407] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:47,408] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:47,408] [INFO] [config.py:744:__init__] Config mesh_device None world_size = 5
+[2025-06-11 20:18:47,417] [INFO] [engine.py:1313:_configure_distributed_model] ********** distributed groups summary **********
+	 self.dp_world_size=5
+	 self.mp_world_size=1
+	 self.seq_dp_world_size=5
+	 self.sequence_parallel_size=1
+***********************************************
+[2025-06-11 20:18:47,418] [INFO] [logging.py:107:log_dist] [Rank 0] DeepSpeed Flops Profiler Enabled: False
+[2025-06-11 20:18:47,420] [INFO] [logging.py:107:log_dist] [Rank 0] Creating ZeRO Offload
+6. 开始训练...
+6. 开始训练...
+6. 开始训练...
+6. 开始训练...
+[2025-06-11 20:18:47,759] [INFO] [utils.py:781:see_memory_usage] DeepSpeedZeRoOffload initialize [begin]
+[2025-06-11 20:18:47,759] [INFO] [utils.py:782:see_memory_usage] MA 6.19 GB         Max_MA 11.32 GB         CA 11.57 GB         Max_CA 12 GB 
+[2025-06-11 20:18:47,760] [INFO] [utils.py:789:see_memory_usage] CPU Virtual Memory:  used = 238.77 GB, percent = 15.8%
+Parameter Offload: Total persistent parameters: 848896 in 368 params
+[2025-06-11 20:18:48,135] [INFO] [utils.py:781:see_memory_usage] DeepSpeedZeRoOffload initialize [end]
+[2025-06-11 20:18:48,136] [INFO] [utils.py:782:see_memory_usage] MA 6.19 GB         Max_MA 6.19 GB         CA 11.57 GB         Max_CA 12 GB 
+[2025-06-11 20:18:48,136] [INFO] [utils.py:789:see_memory_usage] CPU Virtual Memory:  used = 238.82 GB, percent = 15.8%
+[2025-06-11 20:18:48,137] [INFO] [config.py:1014:print] DeepSpeedEngine configuration:
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   activation_checkpointing_config  {
+    "partition_activations": false, 
+    "contiguous_memory_optimization": false, 
+    "cpu_checkpointing": false, 
+    "number_checkpoints": null, 
+    "synchronize_checkpoint_boundary": false, 
+    "profile": false
+}
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   aio_config ................... {'block_size': 1048576, 'queue_depth': 8, 'intra_op_parallelism': 1, 'single_submit': False, 'overlap_events': True, 'use_gds': False}
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   amp_enabled .................. False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   amp_params ................... False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   autotuning_config ............ {
+    "enabled": false, 
+    "start_step": null, 
+    "end_step": null, 
+    "metric_path": null, 
+    "arg_mappings": null, 
+    "metric": "throughput", 
+    "model_info": null, 
+    "results_dir": "autotuning_results", 
+    "exps_dir": "autotuning_exps", 
+    "overwrite": true, 
+    "fast": true, 
+    "start_profile_step": 3, 
+    "end_profile_step": 5, 
+    "tuner_type": "gridsearch", 
+    "tuner_early_stopping": 5, 
+    "tuner_num_trials": 50, 
+    "model_info_path": null, 
+    "mp_size": 1, 
+    "max_train_batch_size": null, 
+    "min_train_batch_size": 1, 
+    "max_train_micro_batch_size_per_gpu": 1.024000e+03, 
+    "min_train_micro_batch_size_per_gpu": 1, 
+    "num_tuning_micro_batch_sizes": 3
+}
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   bfloat16_enabled ............. True
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   bfloat16_immediate_grad_update  True
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   checkpoint_parallel_write_pipeline  False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   checkpoint_tag_validation_enabled  True
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   checkpoint_tag_validation_fail  False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   comms_config ................. <deepspeed.comm.config.DeepSpeedCommsConfig object at 0x7fdf181e9460>
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   communication_data_type ...... None
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   compile_config ............... deepcompile=False free_activation=False offload_activation=False offload_opt_states=False double_buffer=True symmetric_memory=False debug_log=False offload_parameters=False sync_before_reduce=False sync_after_reduce=False sync_before_allgather=False sync_after_allgather=False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   compression_config ........... {'weight_quantization': {'shared_parameters': {'enabled': False, 'quantizer_kernel': False, 'schedule_offset': 0, 'quantize_groups': 1, 'quantize_verbose': False, 'quantization_type': 'symmetric', 'quantize_weight_in_forward': False, 'rounding': 'nearest', 'fp16_mixed_quantize': False, 'quantize_change_ratio': 0.001}, 'different_groups': {}}, 'activation_quantization': {'shared_parameters': {'enabled': False, 'quantization_type': 'symmetric', 'range_calibration': 'dynamic', 'schedule_offset': 1000}, 'different_groups': {}}, 'sparse_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'row_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'head_pruning': {'shared_parameters': {'enabled': False, 'method': 'topk', 'schedule_offset': 1000}, 'different_groups': {}}, 'channel_pruning': {'shared_parameters': {'enabled': False, 'method': 'l1', 'schedule_offset': 1000}, 'different_groups': {}}, 'layer_reduction': {'enabled': False}}
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   curriculum_enabled_legacy .... False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   curriculum_params_legacy ..... False
+[2025-06-11 20:18:48,138] [INFO] [config.py:1018:print]   data_efficiency_config ....... {'enabled': False, 'seed': 1234, 'data_sampling': {'enabled': False, 'num_epochs': 1000, 'num_workers': 0, 'pin_memory': False, 'curriculum_learning': {'enabled': False}, 'dynamic_batching': {'enabled': False, 'lr_scaling_method': 'linear', 'min_batch_size': 1, 'max_batch_size': None, 'sequence_picking_order': 'dataloader', 'verbose': False}}, 'data_routing': {'enabled': False, 'random_ltd': {'enabled': False, 'layer_token_lr_schedule': {'enabled': False}}}}
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   data_efficiency_enabled ...... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   dataloader_drop_last ......... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   disable_allgather ............ False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   dump_state ................... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   dynamic_loss_scale_args ...... None
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_enabled ........... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_gas_boundary_resolution  1
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_layer_name ........ bert.encoder.layer
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_layer_num ......... 0
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_max_iter .......... 100
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_stability ......... 1e-06
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_tol ............... 0.01
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   eigenvalue_verbose ........... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   elasticity_enabled ........... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   flops_profiler_config ........ {
+    "enabled": false, 
+    "recompute_fwd_factor": 0.0, 
+    "profile_step": 1, 
+    "module_depth": -1, 
+    "top_modules": 1, 
+    "detailed": true, 
+    "output_file": null
+}
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   fp16_auto_cast ............... None
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   fp16_enabled ................. False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   fp16_master_weights_and_gradients  False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   global_rank .................. 0
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   grad_accum_dtype ............. None
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   gradient_accumulation_steps .. 1
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   gradient_clipping ............ 0.1
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   gradient_predivide_factor .... 1.0
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   graph_harvesting ............. False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   hybrid_engine ................ enabled=False max_out_tokens=512 inference_tp_size=1 release_inference_cache=False pin_parameters=True tp_gather_partition_size=8
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   initial_dynamic_scale ........ 1
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   load_universal_checkpoint .... False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   loss_scale ................... 1.0
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   memory_breakdown ............. False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   mics_hierarchial_params_gather  False
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   mics_shard_size .............. -1
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   monitor_config ............... tensorboard=TensorBoardConfig(enabled=False, output_path='', job_name='DeepSpeedJobName') comet=CometConfig(enabled=False, samples_log_interval=100, project=None, workspace=None, api_key=None, experiment_name=None, experiment_key=None, online=None, mode=None) wandb=WandbConfig(enabled=False, group=None, team=None, project='deepspeed') csv_monitor=CSVConfig(enabled=False, output_path='', job_name='DeepSpeedJobName')
+[2025-06-11 20:18:48,139] [INFO] [config.py:1018:print]   nebula_config ................ {
+    "enabled": false, 
+    "persistent_storage_path": null, 
+    "persistent_time_interval": 100, 
+    "num_of_version_in_retention": 2, 
+    "enable_nebula_load": true, 
+    "load_path": null
+}
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   optimizer_legacy_fusion ...... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   optimizer_name ............... None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   optimizer_params ............. None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   pipeline ..................... {'stages': 'auto', 'partition': 'best', 'seed_layers': False, 'activation_checkpoint_interval': 0, 'pipe_partitioned': True, 'grad_partitioned': True}
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   pld_enabled .................. False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   pld_params ................... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   prescale_gradients ........... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   scheduler_name ............... None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   scheduler_params ............. None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   seq_parallel_communication_data_type  torch.float32
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   sparse_attention ............. None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   sparse_gradients_enabled ..... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   steps_per_print .............. inf
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   tensor_parallel_config ....... dtype=torch.float16 autotp_size=0 tp_overlap_comm=False tensor_parallel=TPConfig(tp_size=1, tp_grain_size=1, mpu=None, tp_group=None) injection_policy_tuple=None keep_module_on_host=False replace_with_kernel_inject=False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   timers_config ................ enabled=True synchronized=True
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   train_batch_size ............. 60
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   train_micro_batch_size_per_gpu  12
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   use_data_before_expert_parallel_  False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   use_node_local_storage ....... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   wall_clock_breakdown ......... False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   weight_quantization_config ... None
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   world_size ................... 5
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   zero_allow_untested_optimizer  False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   zero_config .................. stage=3 contiguous_gradients=True reduce_scatter=True reduce_bucket_size=500000000 use_multi_rank_bucket_allreduce=True allgather_partitions=True allgather_bucket_size=500000000 overlap_comm=True load_from_fp32_weights=True elastic_checkpoint=False offload_param=DeepSpeedZeroOffloadParamConfig(device='none', nvme_path=None, buffer_count=5, buffer_size=100000000, max_in_cpu=1000000000, pin_memory=False) offload_optimizer=DeepSpeedZeroOffloadOptimizerConfig(device='none', nvme_path=None, buffer_count=4, pin_memory=False, pipeline_read=False, pipeline_write=False, fast_init=False, ratio=1.0) sub_group_size=1000000000 cpu_offload_param=None cpu_offload_use_pin_memory=None cpu_offload=None prefetch_bucket_size=50000000 param_persistence_threshold=100000 model_persistence_threshold=9223372036854775807 max_live_parameters=1000000000 max_reuse_distance=1000000000 gather_16bit_weights_on_model_save=True module_granularity_threshold=0 use_all_reduce_for_fetch_params=False stage3_gather_fp16_weights_on_model_save=False ignore_unused_parameters=True legacy_stage1=False round_robin_gradients=False zero_hpz_partition_size=1 zero_quantized_weights=False zero_quantized_nontrainable_weights=False zero_quantized_gradients=False zeropp_loco_param=None mics_shard_size=-1 mics_hierarchical_params_gather=False memory_efficient_linear=True pipeline_loading_checkpoint=False override_module_apply=True log_trace_cache_warnings=False
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   zero_enabled ................. True
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   zero_force_ds_cpu_optimizer .. True
+[2025-06-11 20:18:48,140] [INFO] [config.py:1018:print]   zero_optimization_stage ...... 3
+[2025-06-11 20:18:48,140] [INFO] [config.py:1004:print_user_config]   json = {
+    "train_batch_size": 60, 
+    "train_micro_batch_size_per_gpu": 12, 
+    "gradient_accumulation_steps": 1, 
+    "zero_optimization": {
+        "stage": 3, 
+        "offload_optimizer": {
+            "device": "none", 
+            "nvme_path": null
+        }, 
+        "offload_param": {
+            "device": "none", 
+            "nvme_path": null
+        }, 
+        "stage3_gather_16bit_weights_on_model_save": true
+    }, 
+    "gradient_clipping": 0.1, 
+    "steps_per_print": inf, 
+    "bf16": {
+        "enabled": true
+    }, 
+    "fp16": {
+        "enabled": false
+    }, 
+    "zero_optimization.reduce_bucket_size": 1.284506e+07, 
+    "zero_optimization.stage3_param_persistence_threshold": 3.584000e+04, 
+    "zero_optimization.stage3_prefetch_bucket_size": 1.156055e+07
+}
+6. 开始训练...
+Parameter Offload: Total persistent parameters: 848896 in 368 params
+wandb: Currently logged in as: leib2765 (leib2765-infantai) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.11
+wandb: Run data is saved locally in /mnt/data1/home/lei00126/AgentTrainer/wandb/run-20250611_201854-mwucc7h4
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run VG-grpo_qwen2.5-vl-7b-instruct
+wandb: ⭐️ View project at https://wandb.ai/leib2765-infantai/huggingface
+wandb: 🚀 View run at https://wandb.ai/leib2765-infantai/huggingface/runs/mwucc7h4
+  0%|          | 0/1000 [00:00<?, ?it/s]Parsed content: namespace(crop='crop((10, 10), (100, 80))', answer=None)
+Parsed content: namespace(crop='crop((5, 5), (200, 200))', answer=None)
+Parsed content: namespace(crop='crop((100, 150), (300, 250))', answer=None)
+Parsed content: namespace(crop='crop((400, 20), (600, 200))', answer=None)
+Parsed content: namespace(crop='crop((20, 20), (200, 70))', answer=None)
+Parsed content: namespace(crop='crop((200, 100), (400, 300))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (500, 150))', answer=None)
+Parsed content: namespace(crop='crop((100, 80), (300, 120))', answer=None)
+Parsed content: namespace(crop='crop((20, 30), (100, 100))', answer=None)
+Parsed content: namespace(crop='crop((150, 100), (600, 400))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (300, 300))', answer=None)
+Parsed content: namespace(crop='crop((50, 150), (550, 200))', answer=None)
+Parsed content: namespace(crop='crop((25, 15), (250, 45))', answer=None)
+Parsed content: namespace(crop='crop((10, 20), (500, 100))', answer=None)
+Parsed content: namespace(crop='crop((80, 50), (250, 150))', answer=None)
+Parsed content: namespace(crop='crop((1100, 600), (1300, 750))', answer=None)
+Parsed content: namespace(crop='crop((20, 40), (80, 80))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (300, 300))', answer=None)
+Parsed content: namespace(crop='crop((950, 450), (1350, 900))', answer=None)
+Parsed content: namespace(crop='crop((10, 150), (200, 200))', answer=None)
+Parsed content: namespace(crop='crop((850, 400), (1024, 488))', answer=None)
+Parsed content: namespace(crop='crop((1200, 480), (1220, 500))', answer=None)
+Parsed content: namespace(crop='crop((820, 400), (950, 450))', answer=None)
+Parsed content: namespace(crop='crop((750, 600), (900, 800))', answer=None)
+Parsed content: namespace(crop='crop((0, 1000), (200, 1200))', answer=None)
+Parsed content: namespace(crop='crop((450, 300), (600, 500))', answer=None)
+Parsed content: namespace(crop='crop((10, 200), (500, 300))', answer=None)
+Parsed content: namespace(crop='crop((1000, 500), (1200, 600))', answer=None)
+Parsed content: namespace(crop='crop((500, 350), (600, 450))', answer=None)
+Parsed content: namespace(crop='crop((1400, 500), (1500, 600))', answer=None)
+Parsed content: namespace(crop='crop((600, 250), (800, 350))', answer=None)
+Parsed content: namespace(crop='crop((850, 400), (1250, 500))', answer=None)
+Parsed content: namespace(crop='crop((150, 150), (300, 200))', answer=None)
+Parsed content: namespace(crop='crop((1100, 20), (1250, 60))', answer=None)
+Parsed content: namespace(crop='crop((0, 700), (300, 800))', answer=None)
+Parsed content: namespace(crop='crop((900, 360), (920, 380))', answer=None)
+Parsed content: namespace(crop='crop((400, 200), (600, 400))', answer=None)
+Parsed content: namespace(crop='crop((300, 600), (700, 800))', answer=None)
+Parsed content: namespace(crop='crop((800, 300), (1000, 500))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((300, 300), (600, 350))', answer=None)
+Parsed content: namespace(crop='crop((990, 30), (1060, 80))', answer=None)
+Parsed content: namespace(crop='crop((980, 30), (1250, 60))', answer=None)
+Parsed content: namespace(crop='crop((1100, 15), (1260, 105))', answer=None)
+Parsed content: namespace(crop='crop((20, 60), (180, 120))', answer=None)
+Parsed content: namespace(crop='crop((1100, 30), (1200, 50))', answer=None)
+Parsed content: namespace(crop='crop((60, 760), (900, 800))', answer=None)
+Parsed content: namespace(crop='crop((940, 20), (1000, 100))', answer=None)
+Parsed content: namespace(crop='crop((60, 250), (200, 300))', answer=None)
+Parsed content: namespace(crop='crop((600, 850), (1100, 950))', answer=None)
+Parsed content: namespace(crop='crop((900, 900), (1000, 1000))', answer=None)
+Parsed content: namespace(crop='crop((25, 435), (200, 500))', answer=None)
+Parsed content: namespace(crop='crop((450, 880), (800, 940))', answer=None)
+Parsed content: namespace(crop='crop((400, 300), (900, 500))', answer=None)
+Parsed content: namespace(crop='crop((50, 200), (600, 400))', answer=None)
+Parsed content: namespace(crop='crop((500, 300), (900, 500))', answer=None)
+Parsed content: namespace(crop='crop((550, 500), (950, 600))', answer=None)
+Parsed content: namespace(crop='crop((940, 920), (1040, 980))', answer=None)
+Parsed content: namespace(crop='crop((100, 500), (600, 600))', answer=None)
+Parsed content: namespace(crop='crop((100, 0), (1000, 200))', answer=None)
+Parsed content: namespace(crop='crop((40, 30), (90, 60))', answer=None)
+Parsed content: namespace(crop='crop((500, 300), (750, 450))', answer=None)
+Parsed content: namespace(crop='crop((1000, 0), (1375, 915))', answer=None)
+Parsed content: namespace(crop='crop((95, 85), (155, 125))', answer=None)
+Parsed content: namespace(crop='crop((1000, 700), (1200, 900))', answer=None)
+Parsed content: namespace(crop='crop((200, 80), (300, 120))', answer=None)
+Parsed content: namespace(crop='crop((1200, 350), (1350, 500))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (300, 200))', answer=None)
+Parsed content: namespace(crop='crop((0, 600), (200, 700))', answer=None)
+Parsed content: namespace(crop='crop((1200, 650), (1300, 700))', answer=None)
+Parsed content: namespace(crop='crop((700, 300), (1000, 400))', answer=None)
+Parsed content: namespace(crop='crop((1200, 500), (1300, 600))', answer=None)
+Parsed content: namespace(crop='crop((160, 100), (240, 150))', answer=None)
+Parsed content: namespace(crop='crop((100, 200), (350, 250))', answer=None)
+Parsed content: namespace(crop='crop((1180, 450), (1240, 520))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((859, 350), (929, 380))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((1050, 20), (1250, 80))', answer=None)
+Parsed content: namespace(crop='crop((200, 100), (1000, 400))', answer=None)
+Parsed content: namespace(crop='crop((275, 75), (325, 125))', answer=None)
+Parsed content: namespace(crop='crop((60, 760), (740, 790))', answer=None)
+Parsed content: namespace(crop='crop((1050, 750), (1150, 850))', answer=None)
+Parsed content: namespace(crop='crop((30, 10), (100, 70))', answer=None)
+Parsed content: namespace(crop='crop((500, 200), (1100, 500))', answer=None)
+Parsed content: namespace(crop='crop((1190, 460), (1230, 510))', answer=None)
+Parsed content: namespace(crop='crop((90, 80), (160, 130))', answer=None)
+Parsed content: namespace(crop='crop((50, 150), (200, 500))', answer=None)
+Parsed content: namespace(crop='crop((200, 0), (400, 200))', answer=None)
+Parsed content: namespace(crop='crop((20, 650), (190, 750))', answer=None)
+Parsed content: namespace(crop='crop((500, 200), (700, 300))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (300, 200))', answer=None)
+Parsed content: namespace(crop='crop((1230, 550), (1300, 650))', answer=None)
+Parsed content: namespace(crop='crop((1220, 655), (1300, 700))', answer=None)
+Parsed content: namespace(crop='crop((20, 20), (400, 100))', answer=None)
+Parsed content: namespace(crop='crop((800, 0), (2050, 2050))', answer=None)
+Parsed content: namespace(crop='crop((60, 760), (740, 790))', answer=None)
+Parsed content: namespace(crop='crop((0, 200), (250, 250))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((100, 150), (500, 500))', answer=None)
+Parsed content: namespace(crop='crop((1150, 700), (1350, 900))', answer=None)
+Parsed content: namespace(crop='crop((800, 0), (1000, 200))', answer=None)
+Parsed content: namespace(crop='crop((400, 150), (800, 350))', answer=None)
+Parsed content: namespace(crop='crop((90, 120), (300, 140))', answer=None)
+Parsed content: namespace(crop='crop((500, 200), (800, 250))', answer=None)
+Parsed content: namespace(crop='crop((1180, 450), (1240, 520))', answer=None)
+Parsed content: namespace(crop='crop((1210, 520), (1300, 600))', answer=None)
+Parsed content: namespace(crop='crop((0, 600), (80, 700))', answer=None)Parsed content: namespace(crop='crop((110, 100), (130, 120))', answer=None)
+
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((35, 15), (95, 65))', answer=None)
+Parsed content: namespace(crop='crop((950, 350), (1280, 450))', answer=None)
+Parsed content: namespace(crop='crop((0, 510), (1210, 800))', answer=None)
+Parsed content: namespace(crop='crop((38, 18), (92, 62))', answer=None)
+Parsed content: namespace(crop='crop((1300, 600), (1375, 650))', answer=None)
+Parsed content: namespace(crop='crop((100, 0), (400, 100))', answer=None)
+Parsed content: namespace(crop='crop((600, 0), (800, 200))', answer=None)
+Parsed content: namespace(crop='crop((600, 300), (850, 350))', answer=None)Parsed content: namespace(crop='crop((800, 150), (1000, 300))', answer=None)
+
+Parsed content: namespace(crop='crop((1220, 540), (1270, 580))', answer=None)
+Parsed content: namespace(crop='crop((450, 175), (650, 275))', answer=None)
+Parsed content: namespace(crop='crop((1160, 430), (1260, 540))', answer=None)
+Parsed content: namespace(crop='crop((0, 800), (1210, 1000))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((20, 150), (100, 250))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (500, 200))', answer=None)
+Parsed content: namespace(crop='crop((25, 60), (50, 80))', answer=None)
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [0.2, 1.0, 1.0, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 0.8, 1.0, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.8, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 0.25, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 0.6666666666666666, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 0.5, 0.0, 1.0, 1.0]
+/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/utils/checkpoint.py:87: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/utils/checkpoint.py:87: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/utils/checkpoint.py:87: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/utils/checkpoint.py:87: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/utils/checkpoint.py:87: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  warnings.warn(
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...
+  0%|          | 1/1000 [01:12<20:13:39, 72.89s/it]                                                   {'loss': 0.0053, 'grad_norm': 0.8029968031725399, 'learning_rate': 0.0, 'epoch': 0.0}
+  0%|          | 1/1000 [01:12<20:13:39, 72.89s/it]╭──────── Step 1 ─────────╮
+│ ┏━━━━━━━━┳━━━━━━━━━━━━┓ │
+│ ┃ Prompt ┃ Completion ┃ │
+│ ┡━━━━━━━━╇━━━━━━━━━━━━┩ │
+│ └────────┴────────────┘ │
+╰─────────────────────────╯
+Parsed content: namespace(crop='crop((0, 0), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (250, 40))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (200, 50))', answer=None)
+Parsed content: namespace(crop='crop((100, 200), (300, 400))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (400, 100))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (300, 50))', answer=None)
+Parsed content: namespace(crop='crop((800, 10), (1000, 100))', answer=None)
+Parsed content: namespace(crop='crop((200, 500), (450, 750))', answer=None)
+Parsed content: namespace(crop='crop((150, 50), (500, 200))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((520, 400), (1020, 800))', answer=None)
+Parsed content: namespace(crop='crop((200, 200), (300, 300))', answer=None)
+Parsed content: namespace(crop='crop((250, 700), (450, 900))', answer=None)
+Parsed content: namespace(crop='crop((1230, 120), (1400, 190))', answer=None)
+Parsed content: namespace(crop='crop((200, 700), (400, 800))', answer=None)
+Parsed content: namespace(crop='crop((50, 100), (250, 200))', answer=None)
+Parsed content: namespace(crop='crop((50, 50), (250, 150))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (300, 200))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (250, 300))', answer=None)
+Parsed content: namespace(crop='crop((400, 700), (700, 900))', answer=None)
+Parsed content: namespace(crop='crop((50, 50), (200, 120))', answer=None)
+Parsed content: namespace(crop='crop((200, 400), (300, 500))', answer=None)
+Parsed content: namespace(crop='crop((40, 840), (300, 880))', answer=None)
+Parsed content: namespace(crop='crop((1300, 0), (1400, 200))', answer=None)
+Parsed content: namespace(crop='crop((780, 480), (900, 600))', answer=None)
+Parsed content: namespace(crop='crop((6, 200), (200, 300))', answer=None)
+Parsed content: namespace(crop='crop((800, 500), (1000, 600))', answer=None)
+Parsed content: namespace(crop='crop((890, 550), (1280, 690))', answer=None)
+Parsed content: namespace(crop='crop((1100, 10), (1200, 110))', answer=None)
+Parsed content: namespace(crop='crop((10, 900), (110, 1000))', answer=None)
+Parsed content: namespace(crop='crop((50, 830), (240, 900))', answer=None)
+Parsed content: namespace(crop='crop((20, 200), (250, 300))', answer=None)
+Parsed content: namespace(crop='crop((10, 50), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((500, 450), (600, 500))', answer=None)Parsed content: namespace(crop='crop((1180, 30), (1260, 120))', answer=None)
+
+Parsed content: namespace(crop='crop((20, 500), (200, 700))', answer=None)
+Parsed content: namespace(crop='crop((120, 160), (1240, 320))', answer=None)
+Parsed content: namespace(crop='crop((20, 30), (500, 100))', answer=None)
+Parsed content: namespace(crop='crop((1100, 45), (1250, 100))', answer=None)
+Parsed content: namespace(crop='crop((1050, 20), (1210, 120))', answer=None)
+Parsed content: namespace(crop='crop((25, 30), (50, 50))', answer=None)
+Parsed content: namespace(crop='crop((300, 700), (450, 900))', answer=None)
+Parsed content: namespace(crop='crop((600, 200), (900, 500))', answer=None)
+Parsed content: namespace(crop='crop((950, 940), (1010, 960))', answer=None)
+Parsed content: namespace(crop='crop((1110, 0), (1200, 700))', answer=None)
+Parsed content: namespace(crop='crop((100, 800), (400, 900))', answer=None)
+Parsed content: namespace(crop='crop((600, 400), (1000, 600))', answer=None)
+Parsed content: namespace(crop='crop((1050, 925), (1150, 975))', answer=None)
+Parsed content: namespace(crop='crop((600, 450), (750, 600))', answer=None)
+Parsed content: namespace(crop='crop((900, 915), (1200, 975))', answer=None)
+Parsed content: namespace(crop='crop((900, 780), (1100, 880))', answer=None)
+Parsed content: namespace(crop='crop((450, 450), (1000, 600))', answer=None)
+Parsed content: namespace(crop='crop((800, 300), (1000, 500))', answer=None)
+Parsed content: namespace(crop='crop((660, 480), (760, 530))', answer=None)
+Parsed content: namespace(crop='crop((550, 150), (750, 250))', answer=None)
+Parsed content: namespace(crop='crop((450, 450), (650, 550))', answer=None)
+Parsed content: namespace(crop='function to zoom in on that specific area. Let\'s start by cropping around the "Wishlist" and "Compare" buttons located near the right side of the page. \n\n<crop>crop((350, 350), (550, 550))', answer=None)
+Error calling tool unterminated string literal (detected at line 1) (<unknown>, line 1)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((50, 100), (100, 150))', answer=None)
+Parsed content: namespace(crop='crop((0, 150), (300, 250))', answer=None)
+Parsed content: namespace(crop='crop((50, 40), (160, 80))', answer=None)
+Parsed content: namespace(crop='crop((10, 500), (250, 650))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((10, 700), (100, 800))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (1150, 615))', answer=None)
+Parsed content: namespace(crop='crop((1200, 100), (1350, 160))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((1150, 600), (1250, 650))', answer=None)
+Parsed content: namespace(crop='crop((180, 380), (320, 520))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((500, 200), (600, 300))', answer=None)
+Parsed content: namespace(crop='crop((20, 250), (850, 650))', answer=None)
+Parsed content: namespace(crop='crop((10, 40), (110, 60))', answer=None)
+Parsed content: namespace(crop='crop((650, 40), (1177, 70))', answer=None)
+Parsed content: namespace(crop='crop((1100, 550), (1280, 700))', answer=None)
+Parsed content: namespace(crop='crop((10, 50), (100, 150))', answer=None)
+Parsed content: namespace(crop='crop((400, 400), (1050, 650))', answer=None)
+Parsed content: namespace(crop='crop((600, 200), (700, 300))', answer=None)
+Parsed content: namespace(crop='crop((900, 900), (1050, 1050))', answer=None)
+Parsed content: namespace(crop='crop((360, 400), (500, 500))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (1350, 815))', answer=None)
+Parsed content: namespace(crop='crop((800, 10), (1000, 100))', answer=None)
+Parsed content: namespace(crop='crop((1200, 100), (1250, 160))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((1200, 600), (1300, 650))', answer=None)
+Parsed content: namespace(crop='crop((10, 800), (100, 900))', answer=None)
+Parsed content: namespace(crop='crop((300, 400), (400, 500))', answer=None)
+Parsed content: namespace(crop='crop((50, 50), (200, 120))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((0, 0), (200, 300))', answer=None)
+Parsed content: namespace(crop='crop((770, 350), (830, 400))', answer=None)
+Parsed content: namespace(crop='crop((120, 360), (180, 460))', answer=None)
+Parsed content: namespace(crop='crop((100, 600), (200, 700))', answer=None)
+Parsed content: namespace(crop='crop((0, 30), (250, 100))', answer=None)
+Parsed content: namespace(crop='crop((0, 50), (200, 150))', answer=None)
+Parsed content: namespace(crop='crop((885, 425),(965, 470))', answer=None)
+Parsed content: namespace(crop='crop((360, 450), (500, 600))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((100, 200), (200, 350))', answer=None)
+Parsed content: namespace(crop='crop((100, 50), (300, 250))', answer=None)
+Parsed content: namespace(crop='crop((1200, 600), (1250, 650))', answer=None)
+Parsed content: namespace(crop='crop((80, 550), (180, 650))', answer=None)
+Parsed content: namespace(crop='crop((900, 10), (1000, 100))', answer=None)
+Parsed content: namespace(crop='crop((70, 60), (130, 110))', answer=None)
+Parsed content: namespace(crop='crop((10, 100), (100, 200))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((800, 300), (1000, 500))', answer=None)
+Parsed content: namespace(crop='crop((700, 200), (800, 300))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((950, 550), (1350, 815))', answer=None)
+Parsed content: namespace(crop='crop((370, 480), (470, 580))', answer=None)
+Parsed content: namespace(crop='crop((100, 700), (200, 800))', answer=None)
+Parsed content: namespace(crop='crop((50, 50), (200, 120))', answer=None)
+Parsed content: namespace(crop='crop((120, 700), (220, 800))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((1000, 100, 1100, 200))', answer=None)
+Error calling tool 
+Parsed content: namespace(crop='crop((0, 0), (150, 500))', answer=None)
+Parsed content: namespace(crop='crop((750, 310), (900, 450))', answer=None)
+Parsed content: namespace(crop='crop((100, 0), (100, 50))', answer=None)
+Parsed content: namespace(crop='crop((50, 150), (250, 300))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((1200, 600), (1230, 630))', answer=None)
+Parsed content: namespace(crop='crop((1050, 600), (1250, 815))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (100, 100))', answer=None)
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.875, 1.0, 0.375, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8333333333333334, 1.0, 0.16666666666666666, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.75, 1.0, 1.0, 1.0, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.875, 1.0, 1.0, 1.0, 0.875, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8333333333333334, 1.0, 1.0, 1.0, 0.8333333333333334, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 0.5, 0.8, 0.0, 1.0, 1.0, 1.0, 1.0, 0.3333333333333333, 1.0, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.9, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 0.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 0.3333333333333333, 0.0, 1.0, 0.8, 1.0, 0.8, 1.0]
+[mc_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[math_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[code_reward_func] -> [None, None, None, None, None, None, None, None, None, None, None, None]
+[vg_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[correct_answer_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[tool_execution_reward_func] -> [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+[format_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[xml_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+[crop_reward_func] -> [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  0%|          | 2/1000 [02:22<19:42:36, 71.10s/it]                                                   {'loss': 0.016, 'grad_norm': 0.37106495946941137, 'learning_rate': 1e-07, 'epoch': 0.0}
+  0%|          | 2/1000 [02:22<19:42:36, 71.10s/it]╭──────── Step 2 ─────────╮
+│ ┏━━━━━━━━┳━━━━━━━━━━━━┓ │
+│ ┃ Prompt ┃ Completion ┃ │
+│ ┡━━━━━━━━╇━━━━━━━━━━━━┩ │
+│ └────────┴────────────┘ │
+╰─────────────────────────╯
+Parsed content: namespace(crop='crop((900, 14), (1040, 48))', answer=None)
+Parsed content: namespace(crop='crop((650, 30), (800, 80))', answer=None)
+Parsed content: namespace(crop='crop((550, 40), (900, 80))', answer=None)
+Parsed content: namespace(crop='crop((980, 12), (1030, 32))', answer=None)
+Parsed content: namespace(crop='crop((10, 50), (130, 100))', answer=None)
+Parsed content: namespace(crop='crop((400, 200), (500, 250))', answer=None)
+Parsed content: namespace(crop='crop((300, 150), (450, 250))', answer=None)
+Parsed content: namespace(crop='crop((550, 20), (1050, 100))', answer=None)
+Parsed content: namespace(crop='crop((450, 300), (650, 350))', answer=None)
+Parsed content: namespace(crop='crop((800, 30), (950, 80))', answer=None)
+Parsed content: namespace(crop='crop((100, 50), (550, 250))', answer=None)
+Parsed content: namespace(crop='crop((800, 20), (850, 70))', answer=None)
+Parsed content: namespace(crop='crop((530, 80), (1200, 250))', answer=None)
+Parsed content: namespace(crop='crop((120, 80), (420, 280))', answer=None)
+Parsed content: namespace(crop='crop((40, 30), (80, 130))', answer=None)
+Parsed content: namespace(crop='crop((280, 280), (1000, 500))', answer=None)
+Parsed content: namespace(crop='crop((10, 20), (500, 600))', answer=None)
+Parsed content: namespace(crop='crop((300, 35), (500, 150))', answer=None)
+Parsed content: namespace(crop='crop((40, 100), (200, 150))', answer=None)
+Parsed content: namespace(crop='crop((100, 20), (400, 100))', answer=None)
+Parsed content: namespace(crop='crop((5, 5), (100, 50))', answer=None)
+Parsed content: namespace(crop='crop((310, 400), (500, 560))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (210, 100))', answer=None)
+Parsed content: namespace(crop='crop((600, 300), (900, 400))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (50, 40))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (600, 400))', answer=None)
+Parsed content: namespace(crop='crop((10, 10), (300, 100))', answer=None)Parsed content: namespace(crop='crop((0, 0), (200, 100))', answer=None)
+
+Parsed content: namespace(crop='crop((0, 0), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((600, 200), (800, 400))', answer=None)
+Parsed content: namespace(crop='crop((300, 100), (500, 200))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (1024, 200))', answer=None)
+Parsed content: namespace(crop='crop((100, 100), (300, 300))', answer=None)
+Parsed content: namespace(crop='crop((250, 50), (450, 300))', answer=None)
+Parsed content: namespace(crop='crop((10, 800), (110, 600))', answer=None)
+Parsed content: namespace(crop='crop((100, 300), (200, 400))', answer=None)
+Parsed content: namespace(crop='crop((440, 100), (800, 150))', answer=None)
+Parsed content: namespace(crop='crop((100, 500), (1000, 700))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((20, 20), (200, 100))', answer=None)
+Parsed content: namespace(crop='crop((60, 500), (260, 600))', answer=None)
+Parsed content: namespace(crop='crop((51, 20), (101, 70))', answer=None)
+Parsed content: namespace(crop='crop((10, 100), (250, 300))', answer=None)
+Parsed content: namespace(crop='crop((50, 200), (300, 500))', answer=None)
+Parsed content: namespace(crop='crop((90, 780), (190, 860))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (300, 100))', answer=None)
+Parsed content: namespace(crop='crop((800, 100), (1000, 300))', answer=None)
+Parsed content: namespace(crop='crop((1050, 5), (1100, 55))', answer=None)
+Parsed content: namespace(crop='crop((10, 20), (150, 50))', answer=None)
+Parsed content: namespace(crop='crop((30, 10), (1200, 150))', answer=None)
+Parsed content: namespace(crop='crop((597, 648), (715, 735))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (160, 80))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (450, 100))', answer=None)
+Parsed content: namespace(crop='crop((1200, 50), (1270, 120))', answer=None)
+Parsed content: namespace(crop='crop((200, 30), (290, 100))', answer=None)
+Parsed content: namespace(crop='crop((200, 620), (360, 680))', answer=None)
+Parsed content: namespace(crop='crop((500, 100), (1000, 300))', answer=None)
+Parsed content: namespace(crop='crop((50, 200), (800, 400))', answer=None)
+Parsed content: namespace(crop='crop((250, 100), (450, 150))', answer=None)
+Parsed content: namespace(crop='crop((930, 5), (1080, 35))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((600, 100), (700, 200))', answer=None)
+Parsed content: namespace(crop='crop((750, 350), (850, 400))', answer=None)
+Parsed content: namespace(crop='crop((200, 100), (200, 200))', answer=None)
+Parsed content: namespace(crop='crop((200, 30), (500, 100))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='(10, 10), (1000, 700)', answer=None)
+Error calling tool 
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((50, 25), (90, 45))', answer=None)
+Parsed content: namespace(crop='crop((400, 500), (900, 700))', answer=None)
+Parsed content: namespace(crop='crop((95, 800), (175, 900))', answer=None)
+Parsed content: namespace(crop='crop((150, 250), (350, 300))', answer=None)
+Parsed content: namespace(crop='crop((200, 50), (400, 150))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((10, 30), (100, 100))', answer=None)
+Parsed content: namespace(crop='crop((40, 30), (70, 70))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((850, 120), (950, 200))', answer=None)
+Parsed content: namespace(crop='crop((40, 300), (1220, 400))', answer=None)
+Parsed content: namespace(crop='crop((250, 620), (390, 690))', answer=None)
+Parsed content: namespace(crop='crop((200, 100), (800, 400))', answer=None)
+Parsed content: namespace(crop='crop((500, 100), (1000, 300))', answer=None)
+Parsed content: namespace(crop='crop((45, 20), (95, 50))', answer=None)
+Parsed content: namespace(crop='crop((0, 500), (250, 700))', answer=None)
+Parsed content: namespace(crop='crop((500, 350), (1000, 500))', answer=None)
+Parsed content: namespace(crop='crop((300, 200), (450, 250))', answer=None)
+Parsed content: namespace(crop='crop((150, 0), (400, 200))', answer=None)
+Parsed content: namespace(crop='crop((100, 20), (300, 120))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((10, 10), (1000, 700))', answer=None)
+Parsed content: namespace(crop='crop((100, 50), (925, 300))', answer=None)
+Parsed content: namespace(crop='crop((0, 0), (1280, 400))', answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop=None, answer=None)
+Parsed content: namespace(crop='crop((20, 100), (1280, 250))', answer=None)
+Parsed content: namespace(crop='crop((400, 100), (900, 300))', answer=None)
+W0611 20:21:46.435000 3941626 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 3942776 closing signal SIGTERM
+W0611 20:21:46.438000 3941626 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 3942777 closing signal SIGTERM
+W0611 20:21:46.441000 3941626 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 3942778 closing signal SIGTERM
+W0611 20:21:46.443000 3941626 site-packages/torch/distributed/elastic/multiprocessing/api.py:897] Sending process 3942779 closing signal SIGTERM
+E0611 20:21:47.588000 3941626 site-packages/torch/distributed/elastic/multiprocessing/api.py:869] failed (exitcode: -9) local_rank: 0 (pid: 3942775) of binary: /mnt/data1/home/lei00126/miniconda3/envs/agenttrain/bin/python3
+Warning: The cache directory for DeepSpeed Triton autotune, /mnt/data1/home/lei00126/.triton/autotune, appears to be on an NFS system. While this is generally acceptable, if you experience slowdowns or hanging when DeepSpeed exits, it is recommended to set the TRITON_CACHE_DIR environment variable to a non-NFS path.
+Traceback (most recent call last):
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/bin/accelerate", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/accelerate/commands/accelerate_cli.py", line 50, in main
+    args.func(args)
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/accelerate/commands/launch.py", line 1183, in launch_command
+    deepspeed_launcher(args)
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/accelerate/commands/launch.py", line 868, in deepspeed_launcher
+    distrib_run.run(args)
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/distributed/run.py", line 909, in run
+    elastic_launch(
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 138, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data1/home/lei00126/miniconda3/envs/agenttrain/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 269, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+========================================================
+agenttrain/main.py FAILED
+--------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+--------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2025-06-11_20:21:46
+  host      : cs-u-converge.cs.umn.edu
+  rank      : 0 (local_rank: 0)
+  exitcode  : -9 (pid: 3942775)
+  error_file: <N/A>
+  traceback : Signal 9 (SIGKILL) received by PID 3942775
+========================================================

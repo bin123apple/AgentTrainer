@@ -1,6 +1,8 @@
-from PIL import Image
 import io
+import os
+from datetime import datetime
 from typing import Tuple, Any
+from PIL import Image
 
 def crop(
     img: Image.Image,
@@ -14,7 +16,7 @@ def crop(
         top_left (Tuple[int, int]): The top-left corner of the cropping rectangle (x1, y1).
         bottom_right (Tuple[int, int]): The bottom-right corner of the cropping rectangle (x2, y2).
     Returns:
-        Tuple[bytes, str]: 
+        Tuple[bytes, str]:
           - On success: (PNG bytes of cropped image, descriptive message)
           - On failure: (None, detailed error message)
     """
@@ -22,7 +24,7 @@ def crop(
     x2, y2 = bottom_right
     width, height = img.size
 
-    # 边界检查并收集所有错误
+    # Boundary checks
     errors = []
     if x1 < 0:
         errors.append(f"x1 ({x1}) < 0")
@@ -46,20 +48,42 @@ def crop(
         )
         return None, msg
 
-    # 执行裁剪
+    # Ensure minimum dimensions
+    crop_w = x2 - x1
+    crop_h = y2 - y1
+    if crop_w < 28 or crop_h < 28:
+        return None, (
+            f"Crop size too small: width={crop_w}, height={crop_h}. "
+            "Both crop_w and crop_h must be at least 28 pixels."
+        )
+
+    # Adjust for edge case of width or height exactly 3
+    if crop_w == 3:
+        if x2 < width:
+            x2 += 1
+        elif x1 > 0:
+            x1 -= 1
+    if crop_h == 3:
+        if y2 < height:
+            y2 += 1
+        elif y1 > 0:
+            y1 -= 1
+
+    # Perform crop
     cropped = img.crop((x1, y1, x2, y2))
     buffer = io.BytesIO()
     cropped.save(buffer, format="PNG")
     data = buffer.getvalue()
 
-    # 生成带微秒级时间戳的文件名并保存
-    # ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    # filename = f"output_{ts}.png"
-    # cropped.save(filename, format="PNG")
+    # Save backup
+    os.makedirs("backup", exist_ok=True)
+    filename = f"backup/output_(({x1},{y1}),({x2},{y2})).png"
+    cropped.save(filename, format="PNG")
 
-    # 构造描述信息
+    # Descriptive message
+    new_w, new_h = cropped.size
     message = (
-        f"Cropped a region of size {x2-x1}×{y2-y1} pixels "
+        f"Cropped a region of size {new_w}×{new_h} pixels "
         f"from the original image ({width}×{height}), "
         f"located at top-left ({x1}, {y1}) and bottom-right ({x2}, {y2})."
     )

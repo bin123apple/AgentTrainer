@@ -1,6 +1,7 @@
 import random
 import json
 from typing import List, Dict, Callable, Any
+import copy
 
 from datasets import Dataset, load_dataset, concatenate_datasets # type: ignore
 
@@ -116,6 +117,29 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
 #     qa_ds = dataset.map(extract_qa, num_proc=10)
     
 #     return qa_ds
+
+def sanitize_dialogs(dialogs, placeholder="<IMAGE>"):
+    """
+    Return a deep-copied list of dialogs with all image_url fields replaced by the placeholder.
+
+    Args:
+        dialogs (List[List[Dict]]): A list of dialogs, each dialog is a list of message dicts.
+        placeholder (str): The string to substitute for each image URL.
+
+    Returns:
+        List[List[Dict]]: A new list of dialogs with image_url fields replaced.
+    """
+    sanitized = copy.deepcopy(dialogs)
+    for dialog in sanitized:
+        for msg in dialog:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for piece in content:
+                    if piece.get("type") == "image_url" and piece.get("image_url") is not None:
+                        piece["image_url"] = placeholder
+                    if piece.get("type") == "text" and piece.get("text") is not None:
+                        piece["text"] = '<TEXT>'
+    return sanitized
 
 
 def format_prompt(prompt: str,

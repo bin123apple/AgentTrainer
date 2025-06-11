@@ -4,7 +4,7 @@ import logging
 
 from datasets import Dataset
 
-from trainers.grpo_env_trainer import RewardFunc
+from agenttrain.trainers.grpo_env_trainer import RewardFunc
 from vllm import LLM, SamplingParams  # type: ignore
 
 class Environment(ABC):

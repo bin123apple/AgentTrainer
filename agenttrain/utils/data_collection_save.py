@@ -147,7 +147,7 @@ def preprocess_and_save_dataset(
 if __name__ == "__main__":
     # 配置参数
     CACHE_DIR = "/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
-    SAMPLE_SIZE = 10000
+    SAMPLE_SIZE = 500
     OUTPUT_PATH = f"/mnt/data1/processed_datasets/uground_processed_{SAMPLE_SIZE}"
     
     # 执行预处理

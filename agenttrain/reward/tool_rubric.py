@@ -1,4 +1,5 @@
 import re
+import ast
 import json
 from typing import List, Dict, Callable, Any, Tuple
 from agenttrain.parsers import XMLParser # rewrite this one
@@ -149,6 +150,7 @@ class ToolRubric(Rubric):
         rewards: List[float | None] = []
         
         for completion, box, t in zip(completions, answer, task):
+            # parser ground-truth to tuple
             if t == "vg":
                 # 1. 取出模型最后一句回答并清洗
                 raw = str(self.get_last_answer(completion)).strip()
@@ -157,9 +159,17 @@ class ToolRubric(Rubric):
                     # 2. 用正则提取两个整数（支持负数）
                     nums = re.findall(r"-?\d+", raw)
                     x, y = int(nums[0]), int(nums[1])
+                    # print(f"Extracted coordinates: ({x}, {y}).")
                     
                     # 3. 拆箱 ground-truth
+                    if isinstance(box, str):
+                        try:
+                            box = tuple(ast.literal_eval(box))
+                        except Exception:
+                            nums2 = re.findall(r"-?\d+", box)
+                            box = tuple(map(int, nums2))
                     x1, y1, x2, y2 = box
+                    # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
                     
                     # 4. 判断并打分
                     reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
@@ -231,7 +241,7 @@ class ToolRubric(Rubric):
             for i, msg in enumerate(trajectory):
                 if msg['role'] == 'assistant':
                     # Use parser to check for tool tag
-                    parsed = self.parser.parse(msg['content'])
+                    parsed = self.parser.parse(msg['content'][0]["text"])
                     if hasattr(parsed, 'tool') and parsed.tool is not None:
                         # Found a properly formatted tool message
                         if i + 1 < len(trajectory) and trajectory[i + 1]['role'] == 'user':
@@ -264,7 +274,8 @@ class ToolRubric(Rubric):
             """
             Reward function that checks execution success for the {tool_name} tool.
             
-            Uses XMLParser to identify proper tool calls for the specified tool.
+            Check Whether the tool was executed successfully.
+            For example, crop tool -> image should be included in the next message.
             """
             import json
             
@@ -276,7 +287,7 @@ class ToolRubric(Rubric):
                 for i, msg in enumerate(trajectory):
                     if msg['role'] == 'assistant':
                         # Use parser to check for tool tag
-                        parsed = self.parser.parse(msg['content'])
+                        parsed = self.parser.parse(msg['content'][0]["text"])
                         if hasattr(parsed, 'crop') and parsed.crop is not None:
                             try:
                                 command = parsed.crop
