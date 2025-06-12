@@ -12,6 +12,13 @@ uv pip install -e .
 pip install flash-attn --no-build-isolation
 ```
 
+## prepare dataset
+```
+python agenttrain/utils/download_to_cache.py
+python agenttrain/utils/data_collection_save.py
+```
+
+
 ## Set up vllm
 
 ```
