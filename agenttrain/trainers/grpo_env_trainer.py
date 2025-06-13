@@ -449,6 +449,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # prepare inference data
         prompts = [x["question"] for x in inputs]
+        print(f"Prompts size: {len(prompts)}")
         answers = [x["answer"] for x in inputs] if "answer" in inputs[0] else None
         images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]
         

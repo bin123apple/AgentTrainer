@@ -49,7 +49,7 @@ def main():
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/home/uconn/BinLei/processed_datasets/uground_processed_500"
+        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -120,13 +120,13 @@ def main():
         beta=0.002,
         max_prompt_length=1024,
         max_completion_length=8192,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        num_generations=2,
-        gradient_accumulation_steps=2,
+        per_device_train_batch_size=12,
+        per_device_eval_batch_size=12,
+        num_generations=12,
+        gradient_accumulation_steps=1,
         gradient_checkpointing=True,
         eval_strategy="steps",
-        eval_steps=200,
+        eval_steps=4000,
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
@@ -139,17 +139,18 @@ def main():
         logging_steps=1,
         log_on_each_node=False,
         log_completions=True,
-        report_to="wandb", # Or wandb
+        report_to="wandb", # wandb/none
         reward_weights=tool_env.get_reward_weights()
     )
-    
-    model_args = ModelConfig(
-        use_peft = True,
-        lora_r = 64,
-        lora_alpha = 128,
-        lora_dropout = 0.05,
-        lora_task_type = "CAUSAL_LM",
-    )
+    # steps(梯度更新次数) = data_amount(总训练数据量)*num_iterations(相当于每组数据用几次)*num_generations(每个数据生成多少个回答)
+    # / (gradient_accumulation_steps(积累几次梯度更新)*per_device_train_batch_size(每个GPU的batch大小)*num_gpus(使用的GPU数量))
+    # model_args = ModelConfig(
+    #     use_peft = True,
+    #     lora_r = 64,
+    #     lora_alpha = 128,
+    #     lora_dropout = 0.05,
+    #     lora_task_type = "CAUSAL_LM",
+    # ) # For lora
 
     # 保存原始方法并创建补丁
     _original_from_pretrained = AutoModelForCausalLM.from_pretrained
@@ -178,7 +179,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         vlm_module=vlm_module_cls(),
-        peft_config=get_peft_config(model_args),
+        # peft_config=get_peft_config(model_args), # For lora
     )
     
     # 7. 开始训练
