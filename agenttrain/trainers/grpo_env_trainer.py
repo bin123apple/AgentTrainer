@@ -3,7 +3,7 @@ import re
 import base64
 import warnings
 from PIL import Image
-from typing import Callable, Dict, Optional, Union, Any, List
+from typing import Callable, Dict, Optional, Union, Any, List, Tuple
 import torch.nn.functional as F
 from agenttrain.vlm_modules import VLMBaseModule
 from accelerate.utils import broadcast_object_list, gather, gather_object
@@ -63,6 +63,33 @@ def nanstd(tensor: torch.Tensor) -> torch.Tensor:
     count = torch.sum(~torch.isnan(tensor))  # Count of non-NaN values
     variance *= count / (count - 1)  # Bessel's correction
     return torch.sqrt(variance)
+
+def split_tensor_dict(
+    tensor_dict: dict[str, Optional[torch.Tensor]], num_chunks: int
+) -> list[dict[str, Optional[torch.Tensor]]]:
+    """
+    Splits a dictionary of tensors along the first dimension into `num_chunks` equal parts.
+
+    Example:
+        >>> x = torch.arange(12).reshape(6, 2)
+        >>> y = torch.arange(6).reshape(6, 1)
+        >>> tensor_dict = {"x": x, "y": y}
+        >>> split_tensor_dict(tensor_dict, 3)
+        [
+            {"x": tensor([[0, 1], [2, 3]]), "y": tensor([[0], [1]])},
+            {"x": tensor([[4, 5], [6, 7]]), "y": tensor([[2], [3]])},
+            {"x": tensor([[ 8,  9], [10, 11]]), "y": tensor([[4], [5]])}
+        ]
+    """
+    first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
+    chunk_size = first_tensor.shape[0] // num_chunks
+    return [
+        {
+            key: tensor[i * chunk_size : (i + 1) * chunk_size] if tensor is not None else None
+            for key, tensor in tensor_dict.items()
+        }
+        for i in range(num_chunks)
+    ]
 
 class GRPOEnvTrainer(GRPOTrainer):
     def __init__(
@@ -159,11 +186,14 @@ class GRPOEnvTrainer(GRPOTrainer):
             
         # Reference model
         if is_deepspeed_zero3_enabled():
+            print("Deepspeed ZeRO-3 is enabled, skipping reference model creation.")
             self.ref_model = model_cls.from_pretrained(model_id, **model_init_kwargs)
         elif peft_config is None:
+            print("peft_config is None, Creating reference model...")
             # If PEFT configuration is not provided, create a reference model based on the initial model.
             self.ref_model = create_reference_model(model)
         else:
+            print("PEFT is enabled, skipping reference model creation.")
             # If PEFT is used, the reference model is not needed since the adapter can be disabled
             # to revert to the initial model.
             self.ref_model = None
@@ -194,7 +224,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             processing_class=processing_class,
             callbacks=callbacks,
             optimizers=optimizers,
-            peft_config=peft_config,
+            peft_config=None, # The adapter is already applied to the model
             **kwargs,
         )
         self.env = env
@@ -208,7 +238,10 @@ class GRPOEnvTrainer(GRPOTrainer):
             repetition_penalty=self.repetition_penalty
         )
         self.reward_weights = reward_weights
-    
+        
+        self._buffered_inputs = [None] * args.gradient_accumulation_steps
+        print('self._buffered_inputs:', self._buffered_inputs)
+        
     def _prepare_multimodal_chat_template(self, prompts: List[str], images: List[Image.Image]) -> List[dict]:
         '''
         Prepare the multimodal chat template for vLLM inference.
@@ -263,7 +296,7 @@ class GRPOEnvTrainer(GRPOTrainer):
                 padding=padding,
                 padding_side=padding_side,
                 add_special_tokens=add_special_tokens)
-        # print(f"Model inputs: {model_inputs}")
+        print(f"Model inputs: {model_inputs}")
         return model_inputs
     
     def generate_logits_to_keep_batch(
@@ -337,7 +370,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         """
         completions = completion_messages
         num_samples = len(questions)
-        # print(f"Computing rewards for {num_samples} samples on device {device}")
+        print(f"Computing rewards for {num_samples} samples on device {device}")
         num_funcs = len(self.reward_funcs)
         # 在当前 device 上创建张量
         rewards_per_func = torch.zeros((num_samples, num_funcs), device=device)
@@ -390,12 +423,12 @@ class GRPOEnvTrainer(GRPOTrainer):
         weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)
         final_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
 
-        # print(f"[Weights] {weights}")
-        # print(f"[Final Rewards] {final_rewards}")
+        print(f"[Weights] {weights}")
+        print(f"[Final Rewards] {final_rewards}")
 
         return final_rewards
 
-    def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]):
+    def _generate_and_score_completions(self, inputs: dict[str, Union[torch.Tensor, Any]]):
         '''
         Prepare several things:
         1. prompt_completion_ids: (B, L)
@@ -466,9 +499,9 @@ class GRPOEnvTrainer(GRPOTrainer):
             
         # debug
         total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
-        # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
+        print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
         total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
-        # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
+        print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
         
         
         model_inputs = self.prepare_model_inputs(prompts_text = all_prompts_one_image_pad, 
@@ -481,13 +514,13 @@ class GRPOEnvTrainer(GRPOTrainer):
         #debug
         mask = input_ids == 151655
         count = int(mask.sum().item())
-        # print(f"Token ID 151655 出现了 {count} 次")
+        print(f"Token ID 151655 出现了 {count} 次")
         
         attention_mask = model_inputs["attention_mask"]
         pixel_values = model_inputs["pixel_values"]
         image_grid_thw = model_inputs["image_grid_thw"]
-        # print(f"Input IDs shape: {input_ids.shape}, Attention mask shape: {attention_mask.shape}"
-        #       f", Pixel values shape: {pixel_values.shape}, Image grid shape: {image_grid_thw.shape}")
+        print(f"Input IDs shape: {input_ids.shape}, Attention mask shape: {attention_mask.shape}"
+              f", Pixel values shape: {pixel_values.shape}, Image grid shape: {image_grid_thw.shape}")
 
         logits_to_keep = self.generate_logits_to_keep_batch(
             input_ids, 
@@ -495,21 +528,95 @@ class GRPOEnvTrainer(GRPOTrainer):
             end_sequence=[198, 151644, 872, 198] #\n<|im_start|>user\n
         )
         
+        # Compute the old_per_token_logps & ref_per_token_logps
+        with torch.no_grad():
+            print(f'num_iterations: {self.num_iterations}')
+            if self.num_iterations > 1:
+                old_per_token_logps,_ = self._get_per_token_logps(
+                    self.model, 
+                    input_ids = input_ids,         # Tensor of shape (B, S)
+                    attention_mask = attention_mask,    # Tensor of shape (B, S)
+                    pixel_values = pixel_values,
+                    image_grid_thw = image_grid_thw,
+                    logits_to_keep = logits_to_keep
+                )
+                print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
+            else:
+                print("No old_per_token_logps to compute, using None.")
+                old_per_token_logps = None
+
+            # （2）如果 beta>0 且给了一个 ref_model，需要对应计算参考模型 log‐probs
+            if self.beta == 0.0:
+                ref_per_token_logps = None
+            elif self.ref_model is not None:
+                ref_per_token_logps,_ =self._get_per_token_logps(
+                    self.ref_model, 
+                    input_ids = input_ids,         # Tensor of shape (B, S)
+                    attention_mask = attention_mask,    # Tensor of shape (B, S)
+                    pixel_values = pixel_values,
+                    image_grid_thw = image_grid_thw,
+                    logits_to_keep = logits_to_keep
+                )
+            else:
+                # 关闭 adapter 时当基线模型
+                with self.accelerator.unwrap_model(self.model).disable_adapter():
+                    ref_per_token_logps,_ = self._get_per_token_logps(
+                        self.model, 
+                        input_ids = input_ids,         # Tensor of shape (B, S)
+                        attention_mask = attention_mask,    # Tensor of shape (B, S)
+                        pixel_values = pixel_values,
+                        image_grid_thw = image_grid_thw,
+                        logits_to_keep = logits_to_keep
+                    )
+        
         # reward fuction test and logic
         inputs = [{"task": "vg", "answer": answer} for answer in answers]
         rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
                                        images = all_images, 
                                        completion_messages = all_messages, 
                                        device = device)
+        
+        print(f"rewards before gather: {rewards}, shape: {rewards.shape}")
+        rewards = gather(rewards)
+        print(f"rewards after gather: {rewards}, shape: {rewards.shape}")
+        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1) # 计算组内reward均值 (B/n, n,)
+        print(f"mean_grouped_rewards: {mean_grouped_rewards}, shape: {mean_grouped_rewards.shape}")
+        # mean_grouped_rewards.shape == (world_batch_size / num_generations,)
+
+        # 把每组平均值 repeat_interleave 回到 (world_batch_size,) 
+        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+        print(f"mean_grouped_rewards: {mean_grouped_rewards}")
+        advantages = (rewards - mean_grouped_rewards)
+        print(f"advantages: {advantages}")
+        
+        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1) # 计算组内reward标准差
+        std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
+        if self.scale_rewards:
+            advantages = advantages / (std_grouped_rewards + 1e-4)
+        
+        # Slice to keep only the local part of the data
+        process_slice = slice(
+            self.accelerator.process_index * len(prompts),
+            (self.accelerator.process_index + 1) * len(prompts),
+        )
+        advantages = advantages[process_slice]
+        print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
+        
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask, 
             "pixel_values": pixel_values, 
             "image_grid_thw": image_grid_thw,
             "logits_to_keep": logits_to_keep, 
-            "rewards": rewards, 
+            "advantages": advantages, 
+            "ref_per_token_logps": ref_per_token_logps,
+            "old_per_token_logps": old_per_token_logps,
         }
-        
+
+    def _prepare_inputs(self, inputs):
+        # Simple pass-through, just like original
+        return inputs
+
     def selective_log_softmax(self, logits, index):
         """
         A memory-efficient implementation of the common `log_softmax -> gather` operation.
@@ -553,7 +660,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         image_grid_thw,    
         logits_to_keep,    # List[List[int]] of length B, each inner list length S (0/1 mask)
         batch_size=None
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         从完整 input_ids 里，提取 logits_to_keep 标记位置对应的 token
         的 log‐probs 并返回一个 (B, L_max) 的 tensor，其中 L_max 是本批
@@ -573,11 +680,11 @@ class GRPOEnvTrainer(GRPOTrainer):
             的 log‐probs，左侧用 0 填充到相同宽度 L_max。
         """
         B, S = input_ids.size()
-        # print(">>> get_per_token_logps input_ids shape:", input_ids.shape)
+        print(">>> get_per_token_logps input_ids shape:", input_ids.shape)
         batch_size = batch_size or B
         all_logps = []  # 用来存储每个 batch 的 log‐probs
         logits_to_keep = torch.tensor(logits_to_keep, dtype=torch.long, device=input_ids.device)
-        # print(">>> logits_to_keep shape:", logits_to_keep, logits_to_keep.shape)
+        print(">>> logits_to_keep shape:", logits_to_keep, logits_to_keep.shape)
         
         for i in range(0, B, batch_size):
             input_ids_batch      = input_ids[i : i + batch_size]       # (B_chunk, S)
@@ -594,9 +701,9 @@ class GRPOEnvTrainer(GRPOTrainer):
                 pixel_values=pixel_values,
                 image_grid_thw=image_grid_thw,
             )
-            # print(">>> outputs:", outputs)
+            print(">>> outputs:", outputs)
             full_logits = outputs.logits  # (B_chunk, S, V)
-            # print(">>> full_logits:", full_logits, full_logits.shape)
+            print(">>> full_logits:", full_logits, full_logits.shape)
             full_logits = full_logits[:, :-1, :] # Change shape to (B_chunk, S-1, V), del the last token logits
             input_ids_batch = input_ids_batch[:, 1: ]  # (B_chunk, S-1), del the first token input_ids
             logits_to_keep = logits_to_keep[:, 1: ]  # (B_chunk, S-1), do the same thing as input_ids_batch
@@ -608,11 +715,11 @@ class GRPOEnvTrainer(GRPOTrainer):
             # 3) 用这个列掩码同步裁剪三者
             logits_to_keep = logits_to_keep[:, col_mask]  # → (B, S',)
             logits       = full_logits   [:, col_mask, :]  # → (B, S', V)
-            # print(">>> logits after col_mask:", logits, logits.shape)
+            print(">>> logits after col_mask:", logits, logits.shape)
             input_ids_batch    = input_ids_batch[:, col_mask]     # → (B, S')
-            # print(">>> input_ids_batch after col_mask:", input_ids_batch, input_ids_batch.shape)
+            print(">>> input_ids_batch after col_mask:", input_ids_batch, input_ids_batch.shape)
             keep_mask    = keep_mask     [:, col_mask]     # → (B, S')
-            # print(">>> keep_mask after col_mask:", keep_mask, keep_mask.shape)
+            print(">>> keep_mask after col_mask:", keep_mask, keep_mask.shape)
             
 
             # 4) 计算批次级别的 log‐probs：传入 (B_chunk, L_max, V) 和 (B_chunk, L_max)
@@ -624,47 +731,22 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_logps.append(single_logps_batch)
 
         result = torch.cat(all_logps, dim=0)  # (B, L_max_overall)
-        # print(">>> all log-prob:", result)
+        print(">>> all log-prob:", result)
         return result, logits_to_keep
 
-    def compute_loss(self, model, inputs, num_items_in_batch=None):
-        # Compute the old_per_token_logps & ref_per_token_logps
-        with torch.no_grad():
-            if self.num_iterations > 1:
-                old_per_token_logps,_ = self._get_per_token_logps(
-                    self.model, 
-                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
-                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
-                    pixel_values = inputs.get("pixel_values"),
-                    image_grid_thw = inputs.get("image_grid_thw"),
-                    logits_to_keep = inputs.get("logits_to_keep")
-                )
-            else:
-                old_per_token_logps = None
-
-            # （2）如果 beta>0 且给了一个 ref_model，需要对应计算参考模型 log‐probs
-            if self.beta == 0.0:
-                ref_per_token_logps = None
-            elif self.ref_model is not None:
-                ref_per_token_logps,_ =self._get_per_token_logps(
-                    self.ref_model, 
-                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
-                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
-                    pixel_values = inputs.get("pixel_values"),
-                    image_grid_thw = inputs.get("image_grid_thw"),
-                    logits_to_keep = inputs.get("logits_to_keep")
-                )
-            else:
-                # 关闭 adapter 时当基线模型
-                with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps,_ = self._get_per_token_logps(
-                        self.model, 
-                        input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
-                        attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
-                        pixel_values = inputs.get("pixel_values"),
-                        image_grid_thw = inputs.get("image_grid_thw"),
-                        logits_to_keep = inputs.get("logits_to_keep")
-                    )
+    def compute_loss(self, model, inputs, num_items_in_batch=None):  
+        print(">> buffered before:", self._buffered_inputs)
+        # Check if we need to generate new completions or use buffered ones
+        if self.state.global_step % self.num_iterations == 0:
+            inputs = self._generate_and_score_completions(inputs)
+            self._buffered_inputs[self._step % self.args.gradient_accumulation_steps] = inputs
+        else:
+            inputs = self._buffered_inputs[self._step % self.args.gradient_accumulation_steps]
+        self._step += 1
+        
+        advantages = inputs["advantages"]  # (B, )
+        ref_per_token_logps = inputs["ref_per_token_logps"]  # (B, L_max)
+        old_per_token_logps = inputs["old_per_token_logps"]  # (B, L_max)
         
         # Compute the per-token log probabilities for the model
         per_token_logps,completion_mask = self._get_per_token_logps(
@@ -675,8 +757,8 @@ class GRPOEnvTrainer(GRPOTrainer):
             image_grid_thw = inputs.get("image_grid_thw"),
             logits_to_keep = inputs.get("logits_to_keep")
         )
-        # print(f"per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
-        # print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
+        print(f"current per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
+        print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
 
         # Compute the KL divergence between the model and the reference model
         # https://arxiv.org/abs/2402.03300 Eq (4)
@@ -684,36 +766,25 @@ class GRPOEnvTrainer(GRPOTrainer):
             per_token_kl = (
                 torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
             )
-
-        # Compute the advantages
-        rewards = inputs["rewards"] # (B，)
-        # print(f"rewards: {rewards}, shape: {rewards.shape}")
-        mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1) # 计算组内reward均值 (B/n, n,)
-        # print(f"mean_grouped_rewards: {mean_grouped_rewards}, shape: {mean_grouped_rewards.shape}")
-        # mean_grouped_rewards.shape == (world_batch_size / num_generations,)
-
-        # 把每组平均值 repeat_interleave 回到 (world_batch_size,) 
-        mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        # print(f"mean_grouped_rewards: {mean_grouped_rewards}")
-        advantages = (rewards - mean_grouped_rewards)
-        # print(f"advantages: {advantages}")
-        
-        std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1) # 计算组内reward标准差
-        std_grouped_rewards = std_grouped_rewards.repeat_interleave(self.num_generations, dim=0)
-        if self.scale_rewards:
-            advantages = advantages / (std_grouped_rewards + 1e-4)
+            print(f"per_token_kl: {per_token_kl}, shape: {per_token_kl.shape}")
         
         # Compute the loss
         # https://arxiv.org/abs/2402.03300 Eq (3)
         coef_1 = torch.exp(per_token_logps - old_per_token_logps)
+        print(f"coef_1: {coef_1}, shape: {coef_1.shape}")
         coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
+        print(f"coef_2: {coef_2}, shape: {coef_2.shape}")
         per_token_loss1 = coef_1 * advantages.unsqueeze(1)
+        print(f"per_token_loss1: {per_token_loss1}, shape: {per_token_loss1.shape}")
         per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+        print(f"per_token_loss2: {per_token_loss2}, shape: {per_token_loss2.shape}")
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        print(f"per_token_loss: {per_token_loss}, shape: {per_token_loss.shape}")
         if self.beta != 0.0:
             per_token_loss = per_token_loss + self.beta * per_token_kl
 
         if self.loss_type == "grpo":
+            print("completion_mask shape and sum:", completion_mask.shape, completion_mask.sum(-1))
             loss = ((per_token_loss * completion_mask).sum(-1) / completion_mask.sum(-1).clamp(min=1.0)).mean()
         elif self.loss_type == "bnpo":
             loss = (per_token_loss * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
@@ -721,7 +792,6 @@ class GRPOEnvTrainer(GRPOTrainer):
             loss = (per_token_loss * completion_mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
-        # print(f"Computed loss: {loss}")
         
         return loss
 

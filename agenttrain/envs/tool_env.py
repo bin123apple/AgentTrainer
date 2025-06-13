@@ -223,7 +223,7 @@ class ToolEnv(MultiTurnEnv):
     def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , **kwargs: Any) -> Dict[str, Any]:
         try:
             parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
-            print(f"Parsed content: {parsed}")
+            # print(f"Parsed content: {parsed}")
             if hasattr(parsed, 'crop') and parsed.crop is not None:
                 image_entry = next(item for item in messages[0]["content"] if item["type"] == "image_url")
                 data_uri = image_entry["image_url"]["url"]

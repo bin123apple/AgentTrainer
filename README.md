@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 python -m agenttrain.inference.vllm_serve --model "Qwen/Q
 Or
 
 ```
-CUDA_VISIBLE_DEVICES=2 nohup python -m agenttrain.inference.vllm_serve \
+CUDA_VISIBLE_DEVICES=0 nohup python -m agenttrain.inference.vllm_serve \
   --model "Qwen/Qwen2.5-VL-7B-Instruct" \
   --tensor_parallel_size 1 \
   --max_model_len 8192 \
@@ -39,8 +39,8 @@ CUDA_VISIBLE_DEVICES=5,6,7 accelerate launch --num-processes 3 --config-file age
 OR
 
 ```
-CUDA_VISIBLE_DEVICES=3,4,5,6,7 nohup accelerate launch \
-  --num-processes 5 \
+CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 nohup accelerate launch \
+  --num-processes 7 \
   --config-file agenttrain/configs/zero3.yaml \
   agenttrain/main.py > training_log.log 2>&1 &
 ```
