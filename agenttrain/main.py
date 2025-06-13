@@ -41,12 +41,15 @@ def get_vlm_module(model_name_or_path):
     else:
         raise ValueError(f"Unsupported model: {model_name_or_path}")
 
+class GRPOModelConfig(ModelConfig):
+    freeze_vision_modules: bool = False
+
 def main():
     """主函数"""
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_500"
+        PROCESSED_DATA_PATH = "/home/uconn/BinLei/processed_datasets/uground_processed_500"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -110,24 +113,24 @@ def main():
         warmup_steps=10,
         num_train_epochs=1,
         temperature=1.0,
-        max_steps=1000,
+        # max_steps=1000000,
         bf16=True,
         max_grad_norm=0.1,
         num_iterations=2,
         beta=0.002,
         max_prompt_length=1024,
         max_completion_length=8192,
-        per_device_train_batch_size=12,
-        per_device_eval_batch_size=12,
-        num_generations=6,
-        gradient_accumulation_steps=1,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        num_generations=2,
+        gradient_accumulation_steps=2,
         gradient_checkpointing=True,
         eval_strategy="steps",
-        eval_steps=100,
+        eval_steps=200,
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=100,
+        save_steps=200,
         save_only_model=True,
         use_vllm=True,
         vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
@@ -136,7 +139,7 @@ def main():
         logging_steps=1,
         log_on_each_node=False,
         log_completions=True,
-        report_to="wandb",
+        report_to="wandb", # Or wandb
         reward_weights=tool_env.get_reward_weights()
     )
     
@@ -145,7 +148,7 @@ def main():
         lora_r = 64,
         lora_alpha = 128,
         lora_dropout = 0.05,
-        lora_task_type = "CAUSAL_LM"
+        lora_task_type = "CAUSAL_LM",
     )
 
     # 保存原始方法并创建补丁
@@ -175,6 +178,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         vlm_module=vlm_module_cls(),
+        peft_config=get_peft_config(model_args),
     )
     
     # 7. 开始训练

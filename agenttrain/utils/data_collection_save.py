@@ -15,7 +15,7 @@ from datasets import Features, Value, Sequence, ClassLabel
 from datasets import Dataset, load_dataset, concatenate_datasets
 
 def load_shard(path: str) -> Dataset:
-    return Dataset.from_parquet(path, cache_dir='/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box')
+    return Dataset.from_parquet(path, cache_dir='/home/uconn/.cache/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box')
 
 def parallel_load_dataset(cache_dir: str, num_proc: int = 8) -> Dataset:
     # 1. 递归搜所有 parquet
@@ -146,9 +146,9 @@ def preprocess_and_save_dataset(
 
 if __name__ == "__main__":
     # 配置参数
-    CACHE_DIR = "/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
+    CACHE_DIR = "/home/uconn/.cache/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
     SAMPLE_SIZE = 500
-    OUTPUT_PATH = f"/mnt/data1/processed_datasets/uground_processed_{SAMPLE_SIZE}"
+    OUTPUT_PATH = f"/home/uconn/BinLei/processed_datasets/uground_processed_{SAMPLE_SIZE}"
     
     # 执行预处理
     processed_dataset = preprocess_and_save_dataset(

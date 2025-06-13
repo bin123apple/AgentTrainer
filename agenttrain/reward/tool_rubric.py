@@ -30,9 +30,9 @@ class ToolRubric(Rubric):
             0.0,
             0.0,
             1.0,
-            0.5,
-            0.25,
-            0.25,
+            0.1,
+            0.1,
+            0.1,
         ]
         for tool_name in self.tools.keys():
             self.reward_funcs.append(self.get_named_tool_reward_func(tool_name))
