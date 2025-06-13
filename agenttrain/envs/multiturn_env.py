@@ -186,7 +186,7 @@ class MultiTurnEnv(Environment):
             if self.is_completed(state["messages"]) or current_id_length > sampling_params.max_tokens - 1:
                 # print(f"Marking state {j} as completed")
                 state["completed"] = True
-                state['all_prompts'] = llm_response.prompt + llm_response.outputs[0].text + '<|im_end|>\n' # update all_prompts
+                state['all_prompts'] = llm_response.prompt + llm_response.outputs[0].text + '<|im_end|>' # update all_prompts
             else:
                 self.env_response(state["messages"], state["images"])
 
