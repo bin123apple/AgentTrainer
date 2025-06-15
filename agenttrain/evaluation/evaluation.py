@@ -3,7 +3,9 @@ import io
 import ast
 import json
 import base64
+import argparse
 from PIL import Image
+from pydantic import BaseModel
 from agenttrain.tools import crop
 from pathlib import Path
 from agenttrain.envs.tool_env import ToolEnv
@@ -15,6 +17,11 @@ from typing import List, Dict, Sequence, Any, Union, Tuple
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
 from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
+    
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-VL-7B-Instruct", help="Path to the pretrained model")
+    return parser.parse_args()
 
 def encode_image(image_content):
     return base64.b64encode(image_content).decode('utf-8')
@@ -186,101 +193,172 @@ def get_last_answer(parser, trajectory: List[Dict[str, str]]) -> str | None:
                 return parsed.answer
     return None
 
-def main():
+class OSS_LLM:
+    def __init__(self, args):
+        self.args = args
+        self.model = args.model_name
+        self.tokenizer = args.model_name
+        self.oss_llm = None
+        self.oss_llm_init()
+    
+    def oss_llm_init(self):
+        if self.oss_llm is None:
+            self.oss_llm = LLM(
+                model=self.model,
+                tokenizer=self.model,
+                tensor_parallel_size=4,
+                gpu_memory_utilization=0.9,
+                enforce_eager=True,
+                max_model_len=19264,
+                disable_custom_all_reduce=True,
+                enable_prefix_caching=False,
+                trust_remote_code=True,
+            )
+            
+    def oss_llm_completion(self, messages, stop=None):
+        sampling_params = SamplingParams(
+                    n=1,
+                    max_tokens=9632,
+                    temperature=0,
+                    top_p=1.0,
+                    frequency_penalty=0,
+                    presence_penalty=0
+                )  
+        sampling_params.stop = stop
+        request_output = self.oss_llm.chat(messages, sampling_params)
+        return request_output
+
+    def _ask_llm(self, image_bytes: bytes, text: str) -> tuple[int,int]:
+        b64: str = encode_image(image_bytes)
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "text", "text": text},
+                ]
+            }
+        ]
+        result = self.oss_llm_completion(messages)
+        return result 
+
+def main(multiturn_tools: bool = False):
     
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000"
+        PROCESSED_DATA_PATH = "/home/uconn/datasets/screenspot_arrow"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH) # 
+        print(f"数据集大小: {len(dataset)}")
     except Exception as e:
         print(f"加载数据失败: {e}")
-        print("请先运行 agenttrain/utils/data_collection_save.py 生成预处理数据")
         return  # 或者 raise e 来停止程序
         
-        # 备用方案：如果预处理数据不存在，可以临时使用原始处理方式
-        # from your_preprocess_module import preprocess_dataset
-        # print("回退到原始预处理方式...")
-        # dataset = preprocess_dataset(
-        #     "osunlp/UGround-V1-Data", 
-        #     "train", 
-        #     n=10000,
-        #     cache_dir="/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
-        # )
-    
-    # 2. 随机打乱并按比例分割数据集
-    print("2. 分割训练集和验证集...")
-    split = dataset.shuffle(seed=0).train_test_split(test_size=0.0, seed=0)
-    
-    train_dataset = split["train"]    # 90% 用于训练
-    # print(f"Fist record in train dataset: {train_dataset[0]}")
-    eval_dataset = split["test"]      # 10% 用于评估
-    
-    print(f"训练集大小: {len(train_dataset)}")
-    print(f"验证集大小: {len(eval_dataset)}")
-    
     # 3. 设置工具环境
     print("3. 初始化工具环境...")
     tool_env = ToolEnv(
-        dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        dataset=dataset,
+        eval_dataset=None,
         system_prompt=CROP_SYSTEM_PROMPT,
         few_shot=[],
         tools=[crop],
         max_steps=5
     )
-
-    vllm_client = VLLMClient("0.0.0.0", 8888)
-    vllm_client.init_communicator()
-    sampling_params = SamplingParams(
-        max_tokens=8192,
-        temperature=1,
-        top_k=-1,
-        min_p=0.0 
-    )
+    
+    args = parse_args()
+    tester = OSS_LLM(args)
+    if multiturn_tools:
+        llm = tester.oss_llm
+        sampling_params = SamplingParams(
+                    n=1,
+                    max_tokens=9632,
+                    temperature=0,
+                    top_p=1.0,
+                    frequency_penalty=0,
+                    presence_penalty=0
+                )  
     
     parser: XMLParser = XMLParser(fields=["reasoning", ("tool", "answer")])
     
     out_dir   = Path("outputs")
     out_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = out_dir / "good_completions.jsonl"
 
     # 如果想重新开始而不是在旧文件后追加，先清空：
     # jsonl_path.unlink(missing_ok=True)
 
-    batch_size = 128
-    for start in range(80, len(train_dataset), batch_size):
-        end   = min(start + batch_size, len(train_dataset))
-        batch = train_dataset.select(range(start, end))   # ← 改这行
+    batch_size    = 32
+    total_correct = 0          # ★ 全局计数
 
-        prompts  = batch["question"]                      # ← 直接按列取
-        answers  = batch["answer"] if "answer" in batch.column_names else None
-        images   = [Image.open(io.BytesIO(b)).convert("RGB") for b in batch["image"]]
+    for start in range(0, len(dataset), batch_size):
+        end   = min(start + batch_size, len(dataset))
+        batch = dataset.select(range(start, end))
 
-        multimodal_inputs = _prepare_multimodal_chat_template(prompts, images)
-        env_result  = tool_env.generate(
-            prompts          = multimodal_inputs,
-            llm              = vllm_client,
-            sampling_params  = sampling_params,
-        )
-        completions = env_result["all_messages"]
+        prompts = batch["question"]
+        answers = batch["answer"] if "answer" in batch.column_names else None
+        print(f"anwers: {answers}")
+        images  = [Image.open(io.BytesIO(b)).convert("RGB") for b in batch["image"]]
 
+        if multiturn_tools: # multi-turns + tools
+            multimodal_inputs = _prepare_multimodal_chat_template(prompts, images)
+            env_result = tool_env.generate(
+                prompts         = multimodal_inputs,
+                llm             = llm,
+                sampling_params = sampling_params,
+            )
+            completions = env_result["all_messages"]
+        else: # zero-shot
+            system_prompt = (
+                "Output only the coordinate of one point in your response. "
+                "What element matches the following task: {instruction}"
+            )
+            multimodal_inputs = [] # input messages
+            for prompt, image in zip(prompts, images):
+                instruction_format = system_prompt.format(instruction=prompt)
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                message = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                            {"type": "text", "text": instruction_format},
+                        ]
+                    }
+                ]
+                multimodal_inputs.append(message)
+                
+            llm_responses = tester.oss_llm_completion(
+                multimodal_inputs,
+            )
+            print(f"Received {len(llm_responses)} responses from vLLM.")
+            
+            # Collect output messages
+            completions = []
+            for llm_response in llm_responses:
+                text = llm_response.outputs[0].text
+                coord_pat = re.compile(r"\(\s*\d+\s*[,\uFF0C]\s*\d+\s*\)")
+                wrapped = coord_pat.sub(lambda m: f"<answer>{m.group(0)}</answer>",
+                                        text,
+                                        count=1) 
+                completions.append([{"role": "assistant", "content": [{'type': 'text', 'text': wrapped}]}])
+
+        print(f"completions last elements: {[c[-1] for c in completions]}")
+        
         rewards = vg_reward_func(
-            parser       = parser,
-            completions  = completions,
-            answer       = answers,
-            task         = ["vg"] * len(batch),
+            parser      = parser,
+            completions = completions,
+            answer      = answers,
+            task        = ["vg"] * len(batch),
         )
 
-        good_cnt = 0
-        with jsonl_path.open("a", encoding="utf-8") as f:          # ① 追加模式
-            for idx, r in enumerate(rewards):
-                if r == 1:
-                    sample = completions[idx]
-                    # 若 sample 不是 JSON 可序列化的类型，先转成 str 或 dict
-                    json.dump(sample, f, ensure_ascii=False)
-                    f.write("\n")                                 # ② 每条一行
-                    good_cnt += 1
+        good_cnt       = rewards.count(1)   # ★ 本批命中
+        total_correct += good_cnt           # ★ 累计
 
         print(f"Batch {start//batch_size:4d}: kept {good_cnt}/{len(batch)}")
+
+    # ★ 结束后打印整体命中率
+    print(f"\n✅ Total correct: {total_correct} / {len(dataset)} "
+          f"({total_correct / len(dataset):.2%})")
+
 
 if __name__ == "__main__":
     main()

@@ -28,9 +28,9 @@ CUDA_VISIBLE_DEVICES=0 python -m agenttrain.inference.vllm_serve --model "Qwen/Q
 Or
 
 ```
-CUDA_VISIBLE_DEVICES=0 nohup python -m agenttrain.inference.vllm_serve \
-  --model "Qwen/Qwen2.5-VL-7B-Instruct" \
-  --tensor_parallel_size 1 \
+CUDA_VISIBLE_DEVICES=3,4,5,6 nohup python -m agenttrain.inference.vllm_serve \
+  --model "ByteDance-Seed/UI-TARS-1.5-7B" \
+  --tensor_parallel_size 4 \
   --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \
   --enable_prefix_caching True \
