@@ -1,6 +1,16 @@
 # AgentTrainer
 Hope to incorporate the outputs produced by the agent’s tool invocations into the model’s reasoning as part of its reinforcement learning, achieving better performance by augmenting the reasoning process with genuine, real‐feedback signals.
 
+## SFT
+
+## Collect data
+```
+CUDA_VISIBLE_DEVICES=4,5 nohup python agenttrain/sft/add_think_steps.py > agenttrain_sft_data.log 2>&1 &
+```
+
+
+## RL
+
 ## Setup 
 
 ```

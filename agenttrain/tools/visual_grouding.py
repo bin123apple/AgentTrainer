@@ -75,10 +75,10 @@ def crop(
     cropped.save(buffer, format="PNG")
     data = buffer.getvalue()
 
-    # Save backup
-    os.makedirs("backup", exist_ok=True)
-    filename = f"backup/output_(({x1},{y1}),({x2},{y2})).png"
-    cropped.save(filename, format="PNG")
+    # # Save backup
+    # os.makedirs("backup", exist_ok=True)
+    # filename = f"backup/output_(({x1},{y1}),({x2},{y2})).png"
+    # cropped.save(filename, format="PNG")
 
     # Descriptive message
     new_w, new_h = cropped.size
