@@ -5,6 +5,55 @@ from typing import List, Dict, Callable, Any, Tuple
 from agenttrain.parsers import XMLParser # rewrite this one
 from agenttrain.reward.rubric import Rubric
 from agenttrain.reward.math_grader import grade
+from agenttrain.utils.data_utils import parse_crop_bbox_from_text
+
+def compute_coverage(pred_bbox, gt_bbox):
+    """
+    pred_bbox, gt_bbox: (x1, y1, x2, y2)
+    返回交集面积 / gt_bbox 面积，值在 [0,1] 之间。
+    """
+    # 计算交集坐标
+    xA = max(pred_bbox[0], gt_bbox[0])
+    yA = max(pred_bbox[1], gt_bbox[1])
+    xB = min(pred_bbox[2], gt_bbox[2])
+    yB = min(pred_bbox[3], gt_bbox[3])
+
+    # 交集宽高
+    inter_w = max(0, xB - xA)
+    inter_h = max(0, yB - yA)
+    inter_area = inter_w * inter_h
+
+    # gt 面积
+    gt_area = max(0, gt_bbox[2] - gt_bbox[0]) * max(0, gt_bbox[3] - gt_bbox[1])
+    if gt_area == 0:
+        return 0.0
+
+    return inter_area / gt_area
+
+def average_crop_reward(crop_bboxs, gt_bbox, weights=None):
+    """
+    crop_bboxs: List[Tuple[int,int,int,int]]，模型每条 <crop> 指令对应的 box
+    gt_bbox:   Tuple[int,int,int,int]，ground-truth box
+    weights:   Optional[List[float]]，与 crop_bboxs 等长，若为 None 则默认等权重
+    返回值:    float，位于 [0,1] 之间，根据覆盖度 (intersection/gt_area) 的加权平均
+    """
+    n = len(crop_bboxs)
+    if n == 0:
+        return 0.0
+
+    # 1) 计算每条 crop 的覆盖度：交集面积 / gt_bbox 面积
+    coverages = [compute_coverage(pred, gt_bbox) for pred in crop_bboxs]
+
+    # 2) 准备权重，默认等权
+    if weights is None:
+        weights = [1.0 / n] * n
+    else:
+        s = sum(weights)
+        weights = [w / s for w in weights]
+
+    # 3) 加权平均
+    reward = sum(w * c for w, c in zip(weights, coverages))
+    return reward
 
 class ToolRubric(Rubric):
     def __init__(self,
@@ -20,6 +69,7 @@ class ToolRubric(Rubric):
             self.code_reward_func,
             self.vg_reward_func,
             self.correct_answer_reward_func,
+            self.correct_crop_func,
             self.tool_execution_reward_func,
             self.parser.get_format_reward_func(),
             self.parser.get_xml_reward_func(),
@@ -30,6 +80,7 @@ class ToolRubric(Rubric):
             0.0,
             0.0,
             1.0,
+            0.7,
             0.1,
             0.1,
             0.1,
@@ -173,6 +224,8 @@ class ToolRubric(Rubric):
                     
                     # 4. 判断并打分
                     reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
+                    # print(f"VG reward: {reward}.")
+
                 except Exception:
                     reward = 0.0
             else:
@@ -225,6 +278,44 @@ class ToolRubric(Rubric):
             else:
                 reward = None
             rewards.append(reward)
+        return rewards
+
+    def correct_crop_func(self, completions, answer, **kwargs) -> List[float | None]:
+        rewards: List[float | None] = []
+        
+        for completion, box in zip(completions, answer):
+            # 1. extract the crop bbox from assistant messages
+            crop_bboxs: List[Tuple[int,int,int,int]] = []
+            for msg in completion:
+                if msg.get("role") != "assistant":
+                    continue
+                for item in msg.get("content", []):
+                    if item.get("type") != "text":
+                        continue
+                    text = item["text"]
+                    parsed = parse_crop_bbox_from_text(text)
+                    if parsed is not None:
+                        crop_bboxs.append(parsed)
+            
+            try:
+                # 2. 拆箱 ground-truth
+                if isinstance(box, str):
+                    try:
+                        box = tuple(ast.literal_eval(box))
+                    except Exception:
+                        nums2 = re.findall(r"-?\d+", box)
+                        box = tuple(map(int, nums2))
+                # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
+                # print(f"Predicted crop boxes: {crop_bboxs}.")
+                # print(f"Ground-truth box: {box}.")
+                reward = average_crop_reward(crop_bboxs, box)
+                # print(f"Crop reward: {reward}.")
+
+            except Exception:
+                reward = 0.0
+            
+            rewards.append(reward)
+        
         return rewards
     
     def tool_execution_reward_func(self, completions: List[List[Dict[str, str]]], **kwargs) -> List[float]:

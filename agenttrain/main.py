@@ -1,10 +1,15 @@
 from datasets import Dataset, load_from_disk
 from trl import GRPOConfig, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 import torch
+import io
+import re
+import ast
 from agenttrain.vlm_modules import *
 from tools import crop
+from pathlib import Path
 from utils import preprocess_dataset, get_model_and_tokenizer
 from envs.tool_env import ToolEnv
+from PIL import Image, ImageDraw
 from trainers.grpo_env_trainer import GRPOEnvTrainer
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from transformers import AutoModelForCausalLM, Qwen2_5_VLForConditionalGeneration
@@ -74,6 +79,40 @@ def main():
     # print(f"Fist record in train dataset: {train_dataset[0]}")
     eval_dataset = split["test"]      # 10% 用于评估
     
+    # 随机打乱，取前 50 条（如果不足 50，则取全部）
+    debug_root = Path("debug")
+    debug_root.mkdir(parents=True, exist_ok=True)
+    subset = train_dataset.shuffle(seed=42).select(range(min(50, len(train_dataset))))
+
+    for idx, sample in enumerate(subset):
+        folder = debug_root / f"sample_{idx}"
+        folder.mkdir(parents=True, exist_ok=True)
+        # 1) 保存问题
+        q = sample.get("question", "")
+        (folder / "question.txt").write_text(q, encoding="utf-8")
+
+        # 2) 加载原始图像
+        img = Image.open(io.BytesIO(sample["image"])).convert("RGB")
+        draw = ImageDraw.Draw(img)
+
+        # 3) 解析 answer 中的 bbox
+        raw = sample.get("answer", "")
+        try:
+            # 尝试 Python 语法解析
+            bbox = tuple(ast.literal_eval(raw))
+        except Exception:
+            # 回退到正则提取所有数字
+            nums = re.findall(r"-?\\d+", str(raw))
+            bbox = tuple(map(int, nums))
+
+        # 4) 在图像上画红框
+        draw.rectangle(bbox, outline="red", width=3)
+
+        # 5) 保存带框的图像
+        img.save(folder / "image.png")
+
+    print(f"✅ 已将 {len(subset)} 个样本保存到 {debug_root}/ 下，每个子文件夹包含 question.txt 和 image.png。")
+    
     print(f"训练集大小: {len(train_dataset)}")
     print(f"验证集大小: {len(eval_dataset)}")
     
@@ -93,7 +132,8 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/home/uconn/BinLei/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft"
+    # model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+    model_name = "Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
     #     cache_dir="/mnt/data1/huggingface/models"
@@ -126,7 +166,7 @@ def main():
         gradient_accumulation_steps=1,
         gradient_checkpointing=True,
         eval_strategy="steps",
-        eval_steps=4000,
+        eval_steps=10000,
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
@@ -183,6 +223,7 @@ def main():
     
     # 7. 开始训练
     print("6. 开始训练...")
+    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_checkpoint-800/checkpoint-2')
     trainer.train()
     
     print("训练完成！")

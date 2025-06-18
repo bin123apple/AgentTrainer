@@ -1,3 +1,8 @@
+import matplotlib.pyplot as plt
+import os
+import shutil
+from pathlib import Path
+from PIL import Image, ImageDraw
 import re
 import io
 import ast
@@ -11,6 +16,7 @@ from pathlib import Path
 from agenttrain.envs.tool_env import ToolEnv
 from vllm import LLM, SamplingParams
 from agenttrain.parsers import XMLParser
+from agenttrain.utils.data_utils import sanitize_dialogs
 from datasets import Dataset, load_from_disk
 from agenttrain.inference.vllm_client import VLLMClient
 from typing import List, Dict, Sequence, Any, Union, Tuple
@@ -193,6 +199,21 @@ def get_last_answer(parser, trajectory: List[Dict[str, str]]) -> str | None:
                 return parsed.answer
     return None
 
+def parse_crop_bbox_from_text(text: str):
+    """
+    从形如 <crop>((x1,y1),(x2,y2))</crop> 的文本中提取坐标，
+    返回 (x1, y1, x2, y2) 四元组，找不到时返回 None。
+    """
+    # 匹配 <crop>( (x1,y1) , (x2,y2) )</crop>
+    pattern = re.compile(
+        r"<crop>\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*,\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)\s*</crop>"
+    )
+    m = pattern.search(text)
+    if not m:
+        return None
+    x1, y1, x2, y2 = map(int, m.groups())
+    return x1, y1, x2, y2
+
 class OSS_LLM:
     def __init__(self, args):
         self.args = args
@@ -242,18 +263,41 @@ class OSS_LLM:
         result = self.oss_llm_completion(messages)
         return result 
 
-def main(multiturn_tools: bool = True):
+def save_case_analysis(batch_num, case_num, original_img, cropped_imgs, final_click, crop_bboxs, gt_bbox, save_dir):
+    case_dir = save_dir / f"batch_{batch_num}_case_{case_num}"
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    # 保存原图
+    original_img.save(case_dir / "original.png")
+
+    # 保存被裁剪的图
+    for index, cropped_img in enumerate(cropped_imgs):
+        cropped_img.save(case_dir / "cropped.png")
+
+    # 标记最终点击位置、crop bbox 和 ground truth bbox 的图
+    marked_img = original_img.copy()
+    draw = ImageDraw.Draw(marked_img)
     
+    # 画出所有 crop bbox
+    for crop_bbox in crop_bboxs:
+        print(f'crop_bbox: {crop_bbox}')
+        draw.rectangle(crop_bbox, outline="blue", width=3)
+        
+    print(f'gt_bbox: {gt_bbox}, final_click: {final_click}')
+    draw.rectangle(gt_bbox, outline="green", width=3)
+    draw.ellipse((final_click[0]-5, final_click[1]-5, final_click[0]+5, final_click[1]+5), fill="red")
+    marked_img.save(case_dir / "marked.png")
+
+
+def main(multiturn_tools: bool = True):
     try:
         PROCESSED_DATA_PATH = "/mnt/data1/home/lei00126/datasets/screenspot_arrow"
-        dataset = load_processed_dataset(PROCESSED_DATA_PATH) # 
+        dataset = load_processed_dataset(PROCESSED_DATA_PATH)
         print(f"数据集大小: {len(dataset)}")
     except Exception as e:
         print(f"加载数据失败: {e}")
-        return  # 或者 raise e 来停止程序
-        
-    # 3. 设置工具环境
-    print("3. 初始化工具环境...")
+        return
+
     tool_env = ToolEnv(
         dataset=dataset,
         eval_dataset=None,
@@ -262,103 +306,135 @@ def main(multiturn_tools: bool = True):
         tools=[crop],
         max_steps=5
     )
-    
+
     args = parse_args()
+    model_name = args.model_name if hasattr(args, 'model_name') else "model_results"
+    model_name = model_name.split("/")[-1]
+
+    # 使用一个独立的根目录存放结果
+    results_dir = Path(model_name)
+    results_dir.mkdir(parents=True, exist_ok=True)
+
     tester = OSS_LLM(args)
+
     if multiturn_tools:
         llm = tester.oss_llm
         sampling_params = SamplingParams(
-                    n=1,
-                    max_tokens=9632,
-                    temperature=0,
-                    top_p=1.0,
-                    frequency_penalty=0,
-                    presence_penalty=0
-                )  
-    
-    parser: XMLParser = XMLParser(fields=["reasoning", ("tool", "answer")])
-    
-    out_dir   = Path("outputs")
-    out_dir.mkdir(parents=True, exist_ok=True)
+            n=1,
+            max_tokens=9632,
+            temperature=0,
+            top_p=1.0,
+            frequency_penalty=0,
+            presence_penalty=0
+        )
 
-    # 如果想重新开始而不是在旧文件后追加，先清空：
-    # jsonl_path.unlink(missing_ok=True)
+    parser = XMLParser(fields=["reasoning", ("tool", "answer")])
 
-    batch_size    = 32
-    total_correct = 0          # ★ 全局计数
+    batch_size = 32
+    total_correct = 0
+    batch_correct_list = []
 
     for start in range(0, len(dataset), batch_size):
-        end   = min(start + batch_size, len(dataset))
+        end = min(start + batch_size, len(dataset))
         batch = dataset.select(range(start, end))
 
         prompts = batch["question"]
         answers = batch["answer"] if "answer" in batch.column_names else None
-        print(f"anwers: {answers}")
-        images  = [Image.open(io.BytesIO(b)).convert("RGB") for b in batch["image"]]
+        images = [Image.open(io.BytesIO(b)).convert("RGB") for b in batch["image"]]
 
-        if multiturn_tools: # multi-turns + tools
-            multimodal_inputs = _prepare_multimodal_chat_template(prompts, images)
-            env_result = tool_env.generate(
-                prompts         = multimodal_inputs,
-                llm             = llm,
-                sampling_params = sampling_params,
-            )
-            completions = env_result["all_messages"]
-        else: # zero-shot
-            system_prompt = (
-                "Output only the coordinate of one point in your response. "
-                "What element matches the following task: {instruction}"
-            )
-            multimodal_inputs = [] # input messages
-            for prompt, image in zip(prompts, images):
-                instruction_format = system_prompt.format(instruction=prompt)
-                buffered = io.BytesIO()
-                image.save(buffered, format="PNG")
-                b64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                message = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                            {"type": "text", "text": instruction_format},
-                        ]
-                    }
-                ]
-                multimodal_inputs.append(message)
-                
-            llm_responses = tester.oss_llm_completion(
-                multimodal_inputs,
-            )
-            print(f"Received {len(llm_responses)} responses from vLLM.")
-            
-            # Collect output messages
-            completions = []
-            for llm_response in llm_responses:
-                text = llm_response.outputs[0].text
-                coord_pat = re.compile(r"\(\s*\d+\s*[,\uFF0C]\s*\d+\s*\)")
-                wrapped = coord_pat.sub(lambda m: f"<answer>{m.group(0)}</answer>",
-                                        text,
-                                        count=1) 
-                completions.append([{"role": "assistant", "content": [{'type': 'text', 'text': wrapped}]}])
+        multimodal_inputs = _prepare_multimodal_chat_template(prompts, images)
+        env_result = tool_env.generate(
+            prompts=multimodal_inputs,
+            llm=llm,
+            sampling_params=sampling_params,
+        )
+        completions = env_result["all_messages"]
 
-        print(f"completions last elements: {[c[-1] for c in completions]}")
-        
         rewards = vg_reward_func(
-            parser      = parser,
-            completions = completions,
-            answer      = answers,
-            task        = ["vg"] * len(batch),
+            parser=parser,
+            completions=completions,
+            answer=answers,
+            task=["vg"] * len(batch),
         )
 
-        good_cnt       = rewards.count(1)   # ★ 本批命中
-        total_correct += good_cnt           # ★ 累计
-
+        good_cnt = rewards.count(1)
+        total_correct += good_cnt
+        batch_correct_list.append(good_cnt)
+        
         print(f"Batch {start//batch_size:4d}: kept {good_cnt}/{len(batch)}")
+        
+        # Save analysis for correct and wrong cases
+        for case_type, predicate in [("correct", lambda r: r == 1),
+                                    ("wrong",   lambda r: r != 1)]:
+            for idx, reward in enumerate(rewards):
+                if predicate(reward):
+                    msgs = env_result["all_messages"][idx]
+                    sanitize_message = sanitize_dialogs([msgs])[0]
+                    print(f'len(msgs): {len(msgs)}')
+                    print(f"sanitize_message: {json.dumps(sanitize_message, indent=2, ensure_ascii=False)}")
+                    # 1) 提取所有裁剪图
+                    cropped_images = [
+                        Image.open(io.BytesIO(base64.b64decode(item["image_url"]["url"]
+                                    .split("base64,")[1]))).convert("RGB")
+                        for msg in msgs[1:] if msg.get("role") == "user"
+                        for item in msg.get("content", [])
+                        if item.get("type") == "image_url"
+                    ]
 
-    # ★ 结束后打印整体命中率
-    print(f"\n✅ Total correct: {total_correct} / {len(dataset)} "
-          f"({total_correct / len(dataset):.2%})")
+                    # 2) 提取所有 crop bbox
+                    crop_bboxs = [
+                        parse_crop_bbox_from_text(item["text"])
+                        for msg in msgs if msg.get("role") == "assistant"
+                        for item in msg.get("content", [])
+                        if item.get("type") == "text"
+                        if parse_crop_bbox_from_text(item["text"]) is not None
+                    ]
 
+                    # 3) 提取最终点击
+                    raw = str(get_last_answer(parser, msgs)).strip()
+                    final_click = extract_coordinates([raw])
+                    if isinstance(final_click, str):
+                        try:
+                            final_click = tuple(ast.literal_eval(final_click))
+                        except Exception:
+                            nums = re.findall(r"-?\\d+", final_click)
+                            final_click = tuple(map(int, nums))
+                            
+                    # Convert gt_bbox to tuple if it's a string
+                    box = answers[idx]
+                    if isinstance(box, str):
+                        try:
+                            box = tuple(ast.literal_eval(box))
+                        except Exception:
+                            nums2 = re.findall(r"-?\d+", box)
+                            box = tuple(map(int, nums2))
+
+                    # 4) 保存到不同子文件夹
+                    save_case_analysis(
+                        batch_num=start//batch_size,
+                        case_num=f"{case_type}_{idx}",
+                        original_img=images[idx],
+                        cropped_imgs=cropped_images,
+                        final_click=final_click,
+                        crop_bboxs=crop_bboxs,
+                        gt_bbox=box,
+                        save_dir=results_dir
+                    )
+                    print(f"Saved {case_type} case {idx} of batch {start//batch_size}")
+                    break
+
+
+    # 绘制并保存折线图
+    plt.figure(figsize=(10, 6))
+    plt.plot(batch_correct_list, marker='o')
+    plt.title('Correct Counts per Batch')
+    plt.xlabel('Batch Number')
+    plt.ylabel('Correct Count')
+    plt.grid(True)
+    plt.savefig(results_dir / "batch_accuracy.png")
+    plt.close()
+
+    print(f"\n✅ Total correct: {total_correct} / {len(dataset)} ({total_correct / len(dataset):.2%})")
 
 if __name__ == "__main__":
     main()

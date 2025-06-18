@@ -1,5 +1,6 @@
 import random
 import json
+import re
 from typing import List, Dict, Callable, Any
 import copy
 
@@ -118,6 +119,21 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
     
 #     return qa_ds
 
+def parse_crop_bbox_from_text(text: str):
+    """
+    从形如 <crop>((x1,y1),(x2,y2))</crop> 的文本中提取坐标，
+    返回 (x1, y1, x2, y2) 四元组，找不到时返回 None。
+    """
+    # 匹配 <crop>( (x1,y1) , (x2,y2) )</crop>
+    pattern = re.compile(
+        r"<crop>\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*,\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)\s*</crop>"
+    )
+    m = pattern.search(text)
+    if not m:
+        return None
+    x1, y1, x2, y2 = map(int, m.groups())
+    return x1, y1, x2, y2
+
 def sanitize_dialogs(dialogs, placeholder="<IMAGE>"):
     """
     Return a deep-copied list of dialogs with all image_url fields replaced by the placeholder.
@@ -137,8 +153,6 @@ def sanitize_dialogs(dialogs, placeholder="<IMAGE>"):
                 for piece in content:
                     if piece.get("type") == "image_url" and piece.get("image_url") is not None:
                         piece["image_url"] = placeholder
-                    if piece.get("type") == "text" and piece.get("text") is not None:
-                        piece["text"] = '<TEXT>'
     return sanitized
 
 

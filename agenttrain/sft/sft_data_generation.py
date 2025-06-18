@@ -135,10 +135,11 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     '''
     multimodal_inputs = []
     for prompt, image in zip(prompts, images):
-        initial_prompts = CROP_SYSTEM_PROMPT.format(
-        tool_descriptions=CROP_TOOL_DESCRIPTION,
-        tool_example=CROP_TOOL_EXAMPLE
-        ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
+        # initial_prompts = CROP_SYSTEM_PROMPT.format(
+        # tool_descriptions=CROP_TOOL_DESCRIPTION,
+        # tool_example=CROP_TOOL_EXAMPLE
+        # ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
+        initial_prompts = f''
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")
