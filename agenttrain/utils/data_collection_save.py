@@ -5,13 +5,17 @@
 """
 import io
 import re
+import io
+import re
 import os
+import ast
 import ast
 import json
 import glob
 import random
 from tqdm import tqdm
 from multiprocessing import Pool
+from PIL import Image, ImageDraw
 from PIL import Image, ImageDraw
 from typing import List, Dict, Callable, Any, Optional
 from datasets import Features, Value, Sequence, ClassLabel
@@ -36,6 +40,25 @@ def parallel_load_dataset(cache_dir: str, num_proc: int = 8) -> Dataset:
 
     # 3. 合并
     return concatenate_datasets(shards)
+
+def denorm_bbox_to_pixel(bbox, w, h):
+    x1, y1, x2, y2 = bbox          # 已经是 int
+    return (
+        round(x1 * w / 999),
+        round(y1 * h / 999),
+        round(x2 * w / 999),
+        round(y2 * h / 999),
+    )
+    
+def parse_answer(ans_str):
+    try:                                   # 先试 ast.literal_eval
+        res = ast.literal_eval(ans_str)
+        if isinstance(res, (list, tuple)):
+            return tuple(map(int, res[:4]))    # 只取前 4 个
+    except Exception:
+        pass
+    nums = re.findall(r"-?\\d+", ans_str)   # 退而求其次：正则抽数字
+    return tuple(map(int, nums[:4]))
 
 def denorm_bbox_to_pixel(bbox, w, h):
     x1, y1, x2, y2 = bbox          # 已经是 int
@@ -82,6 +105,12 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
                         batch_heights.append(int(examples["height"][i]))
                         batch_images.append(examples["image"][i])
                         batch_questions.append(cur.get("value", "").strip())
+                        w = int(examples["width"][i])
+                        h = int(examples["height"][i])
+                        norm_str = nxt.get("value", "").strip()
+                        norm_ans = parse_answer(norm_str)
+                        bbox_pixel = denorm_bbox_to_pixel(norm_ans, w, h)
+                        batch_answers.append(str(bbox_pixel))
                         w = int(examples["width"][i])
                         h = int(examples["height"][i])
                         norm_str = nxt.get("value", "").strip()
@@ -156,6 +185,12 @@ def preprocess_and_save_dataset(
         # 或 random.sample(range(total), k) # 随机子集
         ds = ds.select(indices)
         print(f"   采样后数据集大小: {len(ds)}")   # == k
+    if n is not None and m is not None:
+        k = max(0, n - m)                   # 要保留的样本数
+        indices = range(m, m + k)           # 顺序子区间
+        # 或 random.sample(range(total), k) # 随机子集
+        ds = ds.select(indices)
+        print(f"   采样后数据集大小: {len(ds)}")   # == k
     
     # 3. 预处理
     print("2. 开始预处理...")
@@ -175,10 +210,10 @@ def preprocess_and_save_dataset(
 
 if __name__ == "__main__":
     # 配置参数
-    CACHE_DIR = "/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
-    start_sample = 10000
-    end_sample = 20000
-    OUTPUT_PATH = f"/mnt/data1/processed_datasets/uground_processed_{start_sample}_{end_sample}"
+    CACHE_DIR = "/home/uconn/.cache/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
+    start_sample = 0
+    end_sample = 10000
+    OUTPUT_PATH = f"/home/uconn/BinLei/processed_datasets/uground_processed_{start_sample}_{end_sample}"
     
     # 执行预处理
     processed_dataset = preprocess_and_save_dataset(
@@ -195,14 +230,43 @@ if __name__ == "__main__":
     print(f"数据集特征: {processed_dataset.features}")
     
     # 显示第一个样本（并把 image 存盘、画框）
+    # 显示第一个样本（并把 image 存盘、画框）
     if len(processed_dataset) > 0:
         sample = processed_dataset[0]
         print("\n第一个样本:")
 
         # 先打印除 image 外的所有字段
+
+        # 先打印除 image 外的所有字段
         for key, value in sample.items():
             if key != "image":
                 print(f"  {key}: {value}")
+
+        # 处理 image
+        img_data = sample["image"]  # raw bytes
+        img = Image.open(io.BytesIO(img_data)).convert("RGB")
+
+        # 解析 answer bbox（假设是 "(x1, y1, x2, y2)" 形式的字符串或直接 tuple）
+        raw_bbox = sample.get("answer")
+        if isinstance(raw_bbox, str):
+            try:
+                bbox = tuple(ast.literal_eval(raw_bbox))
+            except Exception:
+                # 回退到正则提取数字
+                import re
+                nums = re.findall(r"-?\d+", raw_bbox)
+                bbox = tuple(map(int, nums))
+        else:
+            bbox = raw_bbox
+
+        # 在图上画红框
+        draw = ImageDraw.Draw(img)
+        draw.rectangle(bbox, outline="red", width=3)
+
+        # 保存带框的图片
+        out_path = "sample_0_with_bbox.png"
+        img.save(out_path)
+        print(f"  image: saved with bbox → {out_path}")
 
         # 处理 image
         img_data = sample["image"]  # raw bytes

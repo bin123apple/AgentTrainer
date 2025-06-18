@@ -54,7 +54,7 @@ def main():
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000_20000"
+        PROCESSED_DATA_PATH = "/home/uconn/BinLei/processed_datasets/uground_processed_0_10000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -160,9 +160,9 @@ def main():
         beta=0.002,
         max_prompt_length=1024,
         max_completion_length=8192,
-        per_device_train_batch_size=12,
-        per_device_eval_batch_size=12,
-        num_generations=12,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4,
+        num_generations=4,
         gradient_accumulation_steps=1,
         gradient_checkpointing=True,
         eval_strategy="steps",
@@ -170,8 +170,8 @@ def main():
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=500,
-        save_only_model=False,
+        save_steps=400,
+        save_only_model=True,
         use_vllm=True,
         vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
         vllm_server_port=8888,
