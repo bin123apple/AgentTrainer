@@ -230,12 +230,9 @@ if __name__ == "__main__":
     print(f"数据集特征: {processed_dataset.features}")
     
     # 显示第一个样本（并把 image 存盘、画框）
-    # 显示第一个样本（并把 image 存盘、画框）
     if len(processed_dataset) > 0:
         sample = processed_dataset[0]
         print("\n第一个样本:")
-
-        # 先打印除 image 外的所有字段
 
         # 先打印除 image 外的所有字段
         for key, value in sample.items():

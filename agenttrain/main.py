@@ -133,7 +133,7 @@ def main():
     # 4. 加载模型
     print("4. 加载模型...")
     # model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
-    model_name = "Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps"
+    model_name = "/home/uconn/BinLei/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
     #     cache_dir="/mnt/data1/huggingface/models"

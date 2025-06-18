@@ -631,6 +631,9 @@ class GRPOEnvTrainer(GRPOTrainer):
         advantages = advantages[process_slice]
         # print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
         
+        # Log the metrics
+        self._metrics[mode]["reward/mean"].append(mean_grouped_rewards.mean().item())
+        
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask, 

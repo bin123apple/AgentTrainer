@@ -200,19 +200,13 @@ class ToolEnv(MultiTurnEnv):
         name = "crop"
         usage = f"{name}((x1, y1), (x2, y2))"
         try:
-            # 1. 解析成 AST
-            expr = ast.parse(tool_cmd, mode='eval').body
-            # 2. 必须是对 crop 的调用，且恰好两个位置参数
-            if not (isinstance(expr, ast.Call) and
-                    isinstance(expr.func, ast.Name) and
-                    expr.func.id == name and
-                    len(expr.args) == 2):
-                raise ValueError
-
-            # 3. 将两个参数都 literal_eval 成 (x, y) 元组
-            top_left     = ast.literal_eval(expr.args[0])
-            bottom_right = ast.literal_eval(expr.args[1])
-
+            nums = re.findall(r"-?\d+", tool_cmd)
+            if len(nums) != 4:
+                raise ValueError(f"提取到 {len(nums)} 个数字，预期 4 个")
+            x1, y1, x2, y2 = map(int, nums)
+            top_left = (x1, y1)
+            bottom_right = (x2, y2)
+            
             # 4. 真正调用 crop，并返回结果
             return crop(img, top_left, bottom_right)
 
