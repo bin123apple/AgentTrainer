@@ -6,9 +6,16 @@ wandb/
 
 # .log
 *.log
+logs/
 
 # .egg
 AgentTrain.egg-info/
+
+# .output models
+outputs/
+
+# .debug folder
+debug/
 
 # Python related
 __pycache__/
