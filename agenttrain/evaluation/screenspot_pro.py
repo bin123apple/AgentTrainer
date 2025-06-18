@@ -115,5 +115,5 @@ def convert_to_qa_format(
 if __name__ == "__main__":
     convert_to_qa_format(
         hf_repo="likaixin/ScreenSpot-Pro",
-        save_path="/home/uconn/datasets/screenspot_arrow",  # Arrow directory
+        save_path="/mnt/data1/home/lei00126/datasets/screenspot_arrow",  # Arrow directory
     )

@@ -539,7 +539,7 @@ class MultiTurnEnv(Environment):
                                 break
                             
                         except Exception as e:
-                            print(f"Error processing example {example.get('id', 'unknown')}: {str(e)}")
+                            # print(f"Error processing example {example.get('id', 'unknown')}: {str(e)}")
                             break
                     
                     # Extract only the interaction part (not system/few-shot)
@@ -591,7 +591,7 @@ class MultiTurnEnv(Environment):
                 func_rewards = [fr for fr in func_rewards if fr is not None]
                 func_reward_avg = sum(func_rewards) / max(1, len(func_rewards))
                 func_name = reward_func.__name__ # type: ignore
-                print(f"{func_name}: {func_reward_avg}")
+                # print(f"{func_name}: {func_reward_avg}")
                 rewards[func_name] = func_reward_avg
             
             return rewards

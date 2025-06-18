@@ -18,6 +18,8 @@ class Qwen2VLModule(VLMBaseModule):
             model_cls = Qwen2VLForConditionalGeneration
         elif "Qwen2.5-VL" in model_id:
             model_cls = Qwen2_5_VLForConditionalGeneration
+        elif "qwen2_5vl" in model_id:
+            model_cls = Qwen2_5_VLForConditionalGeneration
         else:
             # raise ValueError(f"Unsupported model: {model_id}")
             model_cls = AutoModelForCausalLM
