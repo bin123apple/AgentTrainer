@@ -26,7 +26,7 @@ from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="Bin12345/Qwen-2.5B-VL-7B-VG-sft-RL-4800-steps", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps-RL-2400", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -104,10 +104,10 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     '''
     multimodal_inputs = []
     for prompt, image in zip(prompts, images):
-        initial_prompts = CROP_SYSTEM_PROMPT.format(
-        tool_descriptions=CROP_TOOL_DESCRIPTION,
-        tool_example=CROP_TOOL_EXAMPLE
-        ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
+        initial_prompts = (
+            "Output only the coordinate of one point in your response. "
+            f"What element matches the following task: {prompt}"
+        )
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")

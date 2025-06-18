@@ -139,7 +139,10 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
         # tool_descriptions=CROP_TOOL_DESCRIPTION,
         # tool_example=CROP_TOOL_EXAMPLE
         # ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
-        initial_prompts = f''
+        initial_prompts = (
+            "Output only the coordinate of one point in your response. "
+            f"What element matches the following task: {prompt}"
+        )
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")

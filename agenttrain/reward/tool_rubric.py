@@ -7,28 +7,32 @@ from agenttrain.reward.rubric import Rubric
 from agenttrain.reward.math_grader import grade
 from agenttrain.utils.data_utils import parse_crop_bbox_from_text
 
-def compute_coverage(pred_bbox, gt_bbox):
+def compute_iou(pred_bbox, gt_bbox):
     """
     pred_bbox, gt_bbox: (x1, y1, x2, y2)
-    返回交集面积 / gt_bbox 面积，值在 [0,1] 之间。
+    返回 IoU（取值范围 [0,1]），如果没有交集返回 0.0
     """
-    # 计算交集坐标
+    # 1. 计算交集坐标
     xA = max(pred_bbox[0], gt_bbox[0])
     yA = max(pred_bbox[1], gt_bbox[1])
     xB = min(pred_bbox[2], gt_bbox[2])
     yB = min(pred_bbox[3], gt_bbox[3])
 
-    # 交集宽高
+    # 2. 交集宽高
     inter_w = max(0, xB - xA)
     inter_h = max(0, yB - yA)
     inter_area = inter_w * inter_h
 
-    # gt 面积
-    gt_area = max(0, gt_bbox[2] - gt_bbox[0]) * max(0, gt_bbox[3] - gt_bbox[1])
-    if gt_area == 0:
+    # 3. 各自面积
+    pred_area = max(0, pred_bbox[2] - pred_bbox[0]) * max(0, pred_bbox[3] - pred_bbox[1])
+    gt_area   = max(0, gt_bbox[2]   - gt_bbox[0]) * max(0, gt_bbox[3]   - gt_bbox[1])
+
+    # 4. 防零除
+    union = pred_area + gt_area - inter_area
+    if union <= 0:
         return 0.0
 
-    return inter_area / gt_area
+    return inter_area / union
 
 def average_crop_reward(crop_bboxs, gt_bbox, weights=None):
     """
@@ -41,8 +45,8 @@ def average_crop_reward(crop_bboxs, gt_bbox, weights=None):
     if n == 0:
         return 0.0
 
-    # 1) 计算每条 crop 的覆盖度：交集面积 / gt_bbox 面积
-    coverages = [compute_coverage(pred, gt_bbox) for pred in crop_bboxs]
+    # 1) 计算每条 crop 的IoU：交集面积 /并集面积
+    coverages = [compute_iou(pred, gt_bbox) for pred in crop_bboxs]
 
     # 2) 准备权重，默认等权
     if weights is None:
