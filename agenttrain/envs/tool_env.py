@@ -1,4 +1,5 @@
 import io
+import re
 import ast
 import base64
 import inspect
@@ -202,7 +203,7 @@ class ToolEnv(MultiTurnEnv):
         try:
             nums = re.findall(r"-?\d+", tool_cmd)
             if len(nums) != 4:
-                raise ValueError(f"提取到 {len(nums)} 个数字，预期 4 个")
+                raise ValueError(f"Extracted {len(nums)} numbers, expected 4")
             x1, y1, x2, y2 = map(int, nums)
             top_left = (x1, y1)
             bottom_right = (x2, y2)
