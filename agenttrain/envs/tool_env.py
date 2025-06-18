@@ -35,7 +35,7 @@ def infer_schema_from_function(func: Callable) -> Dict[str, Any]:
 
     return_type = str(sig.return_annotation.__name__ if sig.return_annotation != inspect.Parameter.empty else "any")
 
-    print(f"return_description: {return_description} ({return_type})")
+    # print(f"return_description: {return_description} ({return_type})")
     # Build args schema
     args = {}
     for name, param in sig.parameters.items():
@@ -217,7 +217,7 @@ class ToolEnv(MultiTurnEnv):
             return crop(img, top_left, bottom_right)
 
         except Exception as e:
-            print(f"Error calling tool {e}")
+            # print(f"Error calling tool {e}")
             return None, f"Wrong Format:{usage}"
 
     def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , **kwargs: Any) -> Dict[str, Any]:

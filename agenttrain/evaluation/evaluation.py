@@ -20,7 +20,7 @@ from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-VL-7B-Instruct", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="/home/uconn/BinLei/LLaMA-Factory/saves/UI-TARS-1.5-7B/full/sft", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -207,7 +207,7 @@ class OSS_LLM:
                 model=self.model,
                 tokenizer=self.model,
                 tensor_parallel_size=4,
-                gpu_memory_utilization=0.9,
+                gpu_memory_utilization=0.7,
                 enforce_eager=True,
                 max_model_len=19264,
                 disable_custom_all_reduce=True,
@@ -242,7 +242,7 @@ class OSS_LLM:
         result = self.oss_llm_completion(messages)
         return result 
 
-def main(multiturn_tools: bool = False):
+def main(multiturn_tools: bool = True):
     
     try:
         PROCESSED_DATA_PATH = "/home/uconn/datasets/screenspot_arrow"

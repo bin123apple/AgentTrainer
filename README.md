@@ -8,6 +8,29 @@ Hope to incorporate the outputs produced by the agent’s tool invocations into 
 CUDA_VISIBLE_DEVICES=4,5 nohup python agenttrain/sft/add_think_steps.py > agenttrain_sft_data.log 2>&1 &
 ```
 
+## SFT Train
+Install llama_factory based on their readme. Change 
+1. `dataset` (dataset_info file) 
+2. `dataloader_num_workers` in yaml to 0
+3. `cutoff_len`
+4. `max_samples`
+Then Run:
+```
+tmux new -s llama_train
+source /mnt/data1/home/lei00126/miniconda3/etc/profile.d/conda.sh
+conda activate llama_factory
+llamafactory-cli train examples/train_full/qwen2_5vl_full_sft.yaml
+ctrl+b d 
+```
+
+Check background task:
+```
+tmux ls
+tmux attach -t llama_train
+```
+
+
+
 
 ## RL
 
@@ -38,9 +61,9 @@ CUDA_VISIBLE_DEVICES=0 python -m agenttrain.inference.vllm_serve --model "Qwen/Q
 Or
 
 ```
-CUDA_VISIBLE_DEVICES=3,4,5,6 nohup python -m agenttrain.inference.vllm_serve \
-  --model "ByteDance-Seed/UI-TARS-1.5-7B" \
-  --tensor_parallel_size 4 \
+CUDA_VISIBLE_DEVICES=0 nohup python -m agenttrain.inference.vllm_serve \
+  --model "/home/uconn/BinLei/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft" \
+  --tensor_parallel_size 1 \
   --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \
   --enable_prefix_caching True \
@@ -56,12 +79,12 @@ CUDA_VISIBLE_DEVICES=5,6,7 accelerate launch --num-processes 3 --config-file age
 OR
 
 ```
-export CUDA_VISIBLE_DEVICES=1,4,5
+export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6
 LOGDIR=logs/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOGDIR"
 
 nohup accelerate launch \
-  --num_processes 3 \
+  --num_processes 6 \
   --config_file agenttrain/configs/zero3.yaml \
   --tee 3 \
   agenttrain/main.py \

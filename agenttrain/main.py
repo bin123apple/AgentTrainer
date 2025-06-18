@@ -49,7 +49,7 @@ def main():
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000"
+        PROCESSED_DATA_PATH = "/home/uconn/BinLei/processed_datasets/uground_processed_0_10000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -93,7 +93,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+    model_name = "/home/uconn/BinLei/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
     #     cache_dir="/mnt/data1/huggingface/models"
@@ -120,9 +120,9 @@ def main():
         beta=0.002,
         max_prompt_length=1024,
         max_completion_length=8192,
-        per_device_train_batch_size=12,
-        per_device_eval_batch_size=12,
-        num_generations=12,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4,
+        num_generations=4,
         gradient_accumulation_steps=1,
         gradient_checkpointing=True,
         eval_strategy="steps",
@@ -130,7 +130,7 @@ def main():
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=200,
+        save_steps=400,
         save_only_model=True,
         use_vllm=True,
         vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
@@ -159,7 +159,6 @@ def main():
         if isinstance(pretrained_model_name_or_path, str) and ("VL" in pretrained_model_name_or_path):
             return Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 pretrained_model_name_or_path,
-                torch_dtype=torch.bfloat16,
                 trust_remote_code=True,
                 **kwargs
             )
