@@ -8,6 +8,9 @@ wandb/
 *.log
 logs/
 
+# backup images
+backup_images/
+
 # .egg
 AgentTrain.egg-info/
 
