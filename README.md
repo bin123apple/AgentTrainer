@@ -26,7 +26,7 @@ ctrl+b d
 Check background task:
 ```
 tmux ls
-tmux attach -t llama_train
+tmux attach -t agenttrain
 ```
 
 
@@ -62,7 +62,7 @@ Or
 
 ```
 CUDA_VISIBLE_DEVICES=4 nohup python -m agenttrain.inference.vllm_serve \
-  --model "Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps" \
+  --model "Qwen/Qwen2.5-VL-7B-Instruct" \
   --tensor_parallel_size 1 \
   --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \
@@ -80,12 +80,11 @@ OR
 
 ```
 export CUDA_VISIBLE_DEVICES=5,6,7
-export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6
 LOGDIR=logs/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOGDIR"
 
 nohup accelerate launch \
-  --num_processes 6 \
+  --num_processes 3 \
   --config_file agenttrain/configs/zero3.yaml \
   --tee 3 \
   agenttrain/main.py \
