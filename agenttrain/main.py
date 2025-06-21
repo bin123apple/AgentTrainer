@@ -54,7 +54,7 @@ def main():
     
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/home/uconn/BinLei/processed_datasets/uground_processed_0_10000"
+        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000_20000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -73,7 +73,7 @@ def main():
     
     # 2. 随机打乱并按比例分割数据集
     print("2. 分割训练集和验证集...")
-    split = dataset.shuffle(seed=0).train_test_split(test_size=0.01, seed=0)
+    split = dataset.shuffle(seed=42).train_test_split(test_size=0.01, seed=0)
     
     train_dataset = split["train"]    # 90% 用于训练
     # print(f"Fist record in train dataset: {train_dataset[0]}")
@@ -132,8 +132,8 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    # model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
-    model_name = "Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps"
+    model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+    # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
     #     cache_dir="/mnt/data1/huggingface/models"
@@ -160,9 +160,9 @@ def main():
         beta=0.002,
         max_prompt_length=1024,
         max_completion_length=8192,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        num_generations=4,
+        per_device_train_batch_size=6,
+        per_device_eval_batch_size=6,
+        num_generations=6,
         gradient_accumulation_steps=1,
         gradient_checkpointing=True,
         eval_strategy="steps",
@@ -171,7 +171,7 @@ def main():
         eval_on_start=False,
         save_strategy="steps",
         save_steps=400,
-        save_only_model=True,
+        save_only_model=False,
         use_vllm=True,
         vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
         vllm_server_port=8888,
@@ -223,8 +223,8 @@ def main():
     
     # 7. 开始训练
     print("6. 开始训练...")
-    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_checkpoint-800/checkpoint-2')
-    trainer.train()
+    trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2.5-vl-7b-instruct/checkpoint-2800')
+    # trainer.train()
     
     print("训练完成！")
 

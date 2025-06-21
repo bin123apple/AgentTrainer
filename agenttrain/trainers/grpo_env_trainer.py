@@ -40,8 +40,9 @@ from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
 from agenttrain.utils.torch_ope import nanmin, nanmax
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
-from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
+from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, LOCATE_TOOL_DESCRIPTION
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, LOCATE_TOOL_EXAMPLE
+from agenttrain.utils.data_utils import sanitize_dialogs, flatten_text_and_images
 
 if is_wandb_available():
     import wandb
@@ -251,14 +252,14 @@ class GRPOEnvTrainer(GRPOTrainer):
         '''
         multimodal_inputs = []
         for prompt, image in zip(prompts, images):
-            # initial_prompts = CROP_SYSTEM_PROMPT.format(
-            # tool_descriptions=CROP_TOOL_DESCRIPTION,
-            # tool_example=CROP_TOOL_EXAMPLE
-            # ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
-            initial_prompts = (
-                "Output only the coordinate of one point in your response. "
-                f"What element matches the following task: {prompt}"
-            )
+            initial_prompts = CROP_SYSTEM_PROMPT.format(
+            tool_descriptions=CROP_TOOL_DESCRIPTION+LOCATE_TOOL_DESCRIPTION,
+            tool_example=CROP_TOOL_EXAMPLE+LOCATE_TOOL_EXAMPLE
+            ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
+            # initial_prompts = (
+            #     "Output only the coordinate of one point in your response. "
+            #     f"What element matches the following task: {prompt}"
+            # )
             if image is not None:
                 buffered = io.BytesIO()
                 image.save(buffered, format="PNG")
@@ -365,7 +366,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         self,
         questions: List[str],
         inputs: List[Dict],
-        images: List[Optional[Image.Image]],
+        all_images: List[Optional[Image.Image]],
         completion_messages: List[Dict],
         device: torch.device,
     ):
@@ -391,12 +392,11 @@ class GRPOEnvTrainer(GRPOTrainer):
                 key: [example[key] for example in inputs]
                 for key in keys
             }
-            if any(img is not None for img in images):
-                reward_kwargs["images"] = [example.get("image") for example in inputs]
+            if any(images is not None for images in all_images):
+                reward_kwargs["all_images"] = [example.get("all_images") for example in inputs]
 
             # 调用 reward 函数
             out = reward_func(
-                questions=questions,
                 completions=completions,
                 **reward_kwargs
             )
@@ -414,8 +414,8 @@ class GRPOEnvTrainer(GRPOTrainer):
             bad_kwargs = {k: v[idx] for k, v in reward_kwargs.items()}
             bad_kwargs["prompt"] = questions[idx]
             bad_kwargs["completion"] = completions[idx]
-            if any(img is not None for img in images):
-                bad_kwargs["image"] = images[idx]
+            if any(img is not None for img in all_images):
+                bad_kwargs["all_images"] = all_images[idx]
             warnings.warn(
                 f"All reward functions returned None for sample {idx}, kwargs: {bad_kwargs!r}"
             )
@@ -430,7 +430,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # log to wandb  
         for i, reward_func_name in enumerate(self.reward_func_names):
-            if reward_func_name in ('correct_crop_func', 'correct_answer_reward_func'):
+            if reward_func_name in ('correct_crop_func', 'correct_answer_reward_func', 'tool_execution_reward_func'):
                 mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
                 self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
 
@@ -489,15 +489,38 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_prompts = env_result['all_prompts'] # calculate log_pb
             all_images = env_result['images'] # calculate log_pb
             all_messages = env_result['all_messages'] # calculate rewards
+            all_images_offset = env_result['images_offset'] # calculate rewards
+            
+            for dialog in env_result["all_messages"]:
+                
+                # initialize user_msgs and assistant_msgs
+                user_msgs = ""
+                user_msgs_index =0
+                assistant_msgs = ""
+                assistant_msgs_index = 0
+                
+                for msg in dialog:
+                    text = flatten_text_and_images(msg.get("content"))
+                    if msg.get("role") == "user":
+                        user_msgs_index += 1
+                        user_msgs = user_msgs + text + "\n" + "#" * 20 + f" User message {user_msgs_index} " + "#" * 20 + "\n"
+                    elif msg.get("role") == "assistant":
+                        assistant_msgs_index += 1
+                        assistant_msgs = assistant_msgs + text + "\n" + "#" * 20 + f" Assistant message {assistant_msgs_index} " + "#" * 20 + "\n"
+
+                self._textual_logs["prompt"].append(user_msgs)
+                self._textual_logs["completion"].append(assistant_msgs)
         else:
             # Non main processes will wait for the main process to finish
             all_prompts = [None] * len(all_multimodal_inputs)
             all_images = [None] * len(all_multimodal_inputs)
             all_messages = [None] * len(all_multimodal_inputs)
+            all_images_offset = [None] * len(all_multimodal_inputs)
             
         all_prompts = broadcast_object_list(all_prompts, from_process=0)
         all_images = broadcast_object_list(all_images, from_process=0)
         all_messages = broadcast_object_list(all_messages, from_process=0)
+        all_images_offset = broadcast_object_list(all_images_offset, from_process=0)
 
         process_slice = slice(
             self.accelerator.process_index * len(prompts),
@@ -507,6 +530,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         all_prompts = all_prompts[process_slice]
         all_images = all_images[process_slice]
         all_messages = all_messages[process_slice]
+        all_images_offset = all_images_offset[process_slice]
         
         # OK, now let's use processor to get the input_ids(Will be paded in processor)/attention_mask/pixel_values/image_grid_thw
         # convert prompts to correct format
@@ -516,10 +540,10 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_prompts_one_image_pad.append(prompt)
             
         # debug
-        total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
+        # total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
         # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
         # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
-        total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
+        # total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
         # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
         # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
         
@@ -532,8 +556,8 @@ class GRPOEnvTrainer(GRPOTrainer):
         input_ids = model_inputs["input_ids"]
         
         #debug
-        mask = input_ids == 151655
-        count = int(mask.sum().item())
+        # mask = input_ids == 151655
+        # count = int(mask.sum().item())
         # print(f"Token ID 151655 出现了 {count} 次")
         # print(f"Token ID 151655 出现了 {count} 次")
         
@@ -594,9 +618,12 @@ class GRPOEnvTrainer(GRPOTrainer):
                     )
         
         # reward fuction test and logic
-        inputs = [{"task": "vg", "answer": answer} for answer in answers]
+        inputs = [
+            {"task": "vg", "answer": ans, "all_images_offset": off}
+            for ans, off in zip(answers, all_images_offset)
+        ]
         rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
-                                       images = all_images, 
+                                       all_images = all_images, 
                                        completion_messages = all_messages, 
                                        device = device)
         
@@ -630,6 +657,9 @@ class GRPOEnvTrainer(GRPOTrainer):
         )
         advantages = advantages[process_slice]
         # print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
+
+        # Log the metrics
+        self._metrics[mode]["reward/mean"].append(mean_grouped_rewards.mean().item())
         
         return {
             "input_ids": input_ids,
