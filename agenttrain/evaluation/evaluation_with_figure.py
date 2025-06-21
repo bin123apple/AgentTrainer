@@ -26,7 +26,7 @@ from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="Bin12345/Qwen-2.5B-VL-7B-VG-sft-2633-steps-RL-2400", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen-2.5b-vl-7b-vg-sft-2633-steps/checkpoint-2400", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -239,7 +239,7 @@ class OSS_LLM:
     def oss_llm_completion(self, messages, stop=None):
         sampling_params = SamplingParams(
                     n=1,
-                    max_tokens=9632,
+                    max_tokens=19263,
                     temperature=0,
                     top_p=1.0,
                     frequency_penalty=0,
@@ -285,7 +285,8 @@ def save_case_analysis(batch_num, case_num, original_img, cropped_imgs, final_cl
         
     print(f'gt_bbox: {gt_bbox}, final_click: {final_click}')
     draw.rectangle(gt_bbox, outline="green", width=3)
-    draw.ellipse((final_click[0]-5, final_click[1]-5, final_click[0]+5, final_click[1]+5), fill="red")
+    if final_click:
+        draw.ellipse((final_click[0]-5, final_click[1]-5, final_click[0]+5, final_click[1]+5), fill="red")
     marked_img.save(case_dir / "marked.png")
 
 
@@ -321,7 +322,7 @@ def main(multiturn_tools: bool = True):
         llm = tester.oss_llm
         sampling_params = SamplingParams(
             n=1,
-            max_tokens=9632,
+            max_tokens=19263,
             temperature=0,
             top_p=1.0,
             frequency_penalty=0,

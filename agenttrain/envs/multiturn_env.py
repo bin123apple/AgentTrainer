@@ -51,7 +51,6 @@ class MultiTurnEnv(Environment):
     def __init__(self,
                  dataset: Dataset | None = None,
                  eval_dataset: Dataset | None = None,
-                 system_prompt: str = "",
                  few_shot: List[Dict[str, str]] = [],
                  sampling_args: Dict[str, Any] = {},
                  mask_env_response: bool = True,
@@ -60,26 +59,9 @@ class MultiTurnEnv(Environment):
                  sleep_time: float = 1.0,
                  **kwargs):
         super().__init__(**kwargs)
-        self.system_prompt = system_prompt
         self.few_shot = few_shot
         self.dataset = dataset
         self.eval_dataset = eval_dataset
-        # if dataset is not None:
-        #     self.dataset = format_dataset(
-        #         dataset=dataset,
-        #         system_prompt=self.system_prompt,
-        #         few_shot=self.few_shot
-        #     )
-        # else:
-        #     self.dataset = None
-        # if eval_dataset is not None:
-        #     self.eval_dataset = format_dataset(
-        #         dataset=eval_dataset,
-        #         system_prompt=self.system_prompt,
-        #         few_shot=few_shot
-        #     )
-        # else:   
-        #     self.eval_dataset = None
         self.sampling_args = {
             "skip_special_tokens": False,
             "spaces_between_special_tokens": False,
@@ -90,16 +72,6 @@ class MultiTurnEnv(Environment):
         self.max_workers = max_workers
         self.sleep_time = sleep_time
         self.max_steps = max_steps
-
-    def get_dataset(self, n: int = -1, seed: int = 0, **kwargs: Any) -> Dataset | None:
-        if n > 0 and self.dataset is not None:
-            return self.dataset.shuffle(seed=seed).select(range(n)) # type: ignore
-        return self.dataset
-
-    def get_eval_dataset(self, n: int = -1, seed: int = 0, **kwargs: Any) -> Dataset | None:
-        if n > 0 and self.eval_dataset is not None:
-            return self.eval_dataset.shuffle(seed=seed).select(range(n)) # type: ignore
-        return self.eval_dataset
 
     @abstractmethod
     def is_completed(self, messages: List[dict[str, Union[str, List[dict]]]], **kwargs: Any) -> bool:
@@ -115,11 +87,8 @@ class MultiTurnEnv(Environment):
              sampling_params: SamplingParams) -> List[Dict[str, Any]]:
         
         live_indices = [i for i, s in enumerate(states) if not s["completed"]]
-        # print(f"Live indices: {live_indices}")
         messages_to_step = [states[i]["messages"] for i in live_indices]
-        debug_messages = sanitize_dialogs(messages_to_step)
-        # print(f"Messages to step: {debug_messages}")
-        
+
         if isinstance(llm, VLLMClient):
             llm_responses = []
             n = len(messages_to_step)
@@ -148,24 +117,8 @@ class MultiTurnEnv(Environment):
                 llm_responses.extend(sub_resps)
 
                 i += n
-            # llm_responses = llm.chat(
-            #     messages_to_step,
-            #     n=1,
-            #     repetition_penalty=sampling_params.repetition_penalty,
-            #     temperature=sampling_params.temperature,
-            #     top_p=sampling_params.top_p,
-            #     top_k=sampling_params.top_k,
-            #     min_p=sampling_params.min_p,
-            #     max_tokens=sampling_params.max_tokens, # type: ignore
-            #     stop=sampling_params.stop, # type: ignore
-            #     include_stop_str_in_output=sampling_params.include_stop_str_in_output,
-            #     skip_special_tokens=sampling_params.skip_special_tokens,
-            #     spaces_between_special_tokens=sampling_params.spaces_between_special_tokens
-            # ) # type: ignore
-            # llm_responses = dict_to_chat_response(llm_responses).responses
         else:
             llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False) # type: ignore
-        #for i, j in enumerate(live_indices):
         
         def update_state(j, llm_response):
             """
@@ -188,7 +141,7 @@ class MultiTurnEnv(Environment):
                 state["completed"] = True
                 state['all_prompts'] = llm_response.prompt + llm_response.outputs[0].text + '<|im_end|>' # update all_prompts
             else:
-                self.env_response(state["messages"], state["images"])
+                self.env_response(state["messages"], state["images"], state["images_offset"]) # call tools and add environment response
 
             return j, state
 
@@ -234,12 +187,17 @@ class MultiTurnEnv(Environment):
         
         # initialize state variables
         all_completed = False
-        states = [{
-            "messages": m,
-            "all_prompts": "",
-            "completed": False,
-            "images": [bs64_image(m)]
-        } for m in prompts]
+        states = []
+        for m in prompts:
+            img = bs64_image(m)
+            state = {
+                "messages": m,
+                "all_prompts": "",
+                "completed": False,
+                "images": [img],
+                "images_offset": [(0,0)],  # Store additional image info if needed
+            }
+            states.append(state)
         
         # main loop
         while not all_completed:
@@ -247,175 +205,17 @@ class MultiTurnEnv(Environment):
             all_completed = all(state["completed"] for state in states)
             
         all_prompts = [s["all_prompts"] for s in states]
-        all_images = [s["images"] for s in states]
+        all_images = [s["images"] for s in states] # list[list[Image.Image]] 
         all_messages = [s["messages"] for s in states]
+        all_images_offset = [s["images_offset"] for s in states] # list[list[Tuple[int, int]]] 
         
         output = {
             "all_prompts": all_prompts,
             "images": all_images,
             "all_messages": all_messages,
+            "images_offset": all_images_offset,
         }
         return output
-    
-    # def step(self,
-    #          states: List[Dict[str, Any]],
-    #          llm: LLM | VLLMClient,
-    #          sampling_params: SamplingParams) -> List[Dict[str, Any]]:
-        
-    #     live_indices = [i for i, s in enumerate(states) if not s["completed"]]
-    #     messages_to_step = [states[i]["messages"] for i in live_indices]
-        
-    #     if isinstance(llm, VLLMClient):
-    #         llm_responses = llm.chat(
-    #             messages_to_step,
-    #             n=1,
-    #             repetition_penalty=sampling_params.repetition_penalty,
-    #             temperature=sampling_params.temperature,
-    #             top_p=sampling_params.top_p,
-    #             top_k=sampling_params.top_k,
-    #             min_p=sampling_params.min_p,
-    #             max_tokens=sampling_params.max_tokens, # type: ignore
-    #             stop=sampling_params.stop, # type: ignore
-    #             include_stop_str_in_output=sampling_params.include_stop_str_in_output,
-    #             skip_special_tokens=sampling_params.skip_special_tokens,
-    #             spaces_between_special_tokens=sampling_params.spaces_between_special_tokens
-    #         ) # type: ignore
-    #         llm_responses = dict_to_chat_response(llm_responses).responses
-    #     else:
-    #         llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False) # type: ignore
-    #     #for i, j in enumerate(live_indices):
-    #     def update_state(j, llm_response):
-    #         # sleep for 0-1 seconds to avoid rate limiting
-    #         time.sleep(self.sleep_time * random.random())
-    #         # # Add the stop reason to the response text and token ids if it exists
-    #         # for stop_reason in sampling_params.stop:
-    #         #     if llm_response.outputs[0].text.endswith(stop_reason):
-    #         #         tokenizer = llm.get_tokenizer()
-    #         #         stop_token_ids = tokenizer.encode(stop_reason, add_special_tokens=False)
-    #         #         llm_response.outputs[0].text += stop_reason
-    #         #         llm_response.outputs[0].token_ids.extend(stop_token_ids)
-                
-    #         state = deepcopy(states[j])
-    #         # if len(state["prompt_ids"]) == 0:
-    #         #     state["prompt_ids"] = llm_response.prompt_token_ids # prompt_ids: initial question
-    #         state["messages"].append({"role": "assistant", "content": [{'type': 'text', 'text': llm_response.outputs[0].text}]})
-        
-    #         # # get token lengths of env response and new completion
-    #         # total_prev_len = len(state["prompt_ids"]) + len(state["completion_ids"])
-    #         # env_response_len  = len(list(llm_response.prompt_token_ids)) - total_prev_len # only env
-    #         # new_completion_len = len(llm_response.outputs[0].token_ids) # 
-
-    #         # # update completion masks
-    #         # state["completion_mask"].extend([self.env_mask] * env_response_len)
-    #         # state["completion_mask"].extend([1] * new_completion_len) 
-
-    #         # # update completion ids
-    #         # state["completion_ids"] = list(llm_response.prompt_token_ids) # completion_ids = model output + env response
-    #         # state["completion_ids"].extend(list(llm_response.outputs[0].token_ids))
-    #         # state["completion_ids"] = state["completion_ids"][len(state["prompt_ids"]):]
-
-    #         # need_append = False
-    #         # if len(state["completion_ids"]) >= 2:
-    #         #     if state["completion_ids"][-1] != 198 and state["completion_ids"][-2] != self.message_end_id:
-    #         #         need_append = True
-    #         # else:
-    #         #     need_append = True
-
-    #         # if need_append:
-    #         #     state["completion_ids"].append(self.message_end_id)
-    #         #     state["completion_ids"].append(198) # \n
-    #         #     state["completion_mask"].append(1)
-    #         #     state["completion_mask"].append(1)
-                
-    #         # if len(state["completion_ids"]) > len(state["completion_mask"]): # type: ignore
-    #         #     state["completion_mask"].extend([1] * (len(state["completion_ids"]) - len(state["completion_mask"]))) # type: ignore
-    #         # if len(state["completion_mask"]) > len(state["completion_ids"]): # type: ignore
-    #         #     state["completion_mask"] = state["completion_mask"][:len(state["completion_ids"])] # type: ignore
-            
-    #         if self.is_completed(state["messages"]) or len(state["completion_ids"]) > sampling_params.max_tokens - 1: # type: ignore
-    #             state["completed"] = True
-    #             state['all_prompts'] = llm_response.prompt_token_ids + llm_response.outputs[0].text + '<|im_end|>\n'
-    #             # state["completion_ids"] = state["completion_ids"][:sampling_params.max_tokens]
-    #             # state["completion_mask"] = state["completion_mask"][:len(state["completion_ids"])]
-    #         else:
-    #             # state["messages"].append(self.env_response(state["messages"])) # call tools and add environment response
-    #             self.env_response(state["messages"], state["images"]) # call tools and add environment response
-
-    #         # enforce that the completion mask and completion ids are the same length
-    #         # weird bug that happens rarely and only for certain models; something tokenizer related :(
-    #         # if not len(state["completion_mask"]) == len(state["completion_ids"]):
-    #         #     print(state["messages"])
-    #         #     print(state["completion_mask"])
-    #         #     print(state["completion_ids"])
-    #         #     min_len = min(len(state["completion_mask"]), len(state["completion_ids"]))
-    #         #     state["completion_mask"] = state["completion_mask"][:min_len]
-    #         #     state["completion_ids"] = state["completion_ids"][:min_len]
-
-    #         return j, state
-
-    #     with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-    #         results = list(executor.map(
-    #             lambda args: update_state(*args),
-    #             [(j, llm_responses[i]) for i, j in enumerate(live_indices)]
-    #         ))
-
-    #     for j, state in results:
-    #         states[j] = state
-
-    #     return states
-
-    # def generate(self, prompts: List[List[Dict[str, Any]]],
-    #              llm: LLM | VLLMClient,
-    #              sampling_params: SamplingParams,
-    #              **kwargs: Any) -> Dict[str, List[Sequence[int]] | List[str] |  List[List[Dict[str, Any]]]]:
-    #     custom_sp = sampling_params.clone()
-    #     for k, v in self.sampling_args.items():
-    #         setattr(custom_sp, k, v)
-
-    #     def bs64_image(messages) -> str:
-    #         image_entry = next(item for item in messages[0]["content"] if item["type"] == "image_url")
-    #         data_uri = image_entry["image_url"]["url"]
-    #         bs64_str = data_uri.split(",", 1)[1]
-    #         image_bytes = base64.b64decode(bs64_str)
-    #         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    #         return img
-        
-    #     # initialize state variables
-    #     all_completed = False
-    #     # states = [{
-    #     #     "messages": m,
-    #     #     "prompt_messages": len(m),
-    #     #     "prompt_ids": [],
-    #     #     "completed": False,
-    #     #     "completion_ids": [],
-    #     #     "completion_mask": [],
-    #     #     "images": [bs64_image(m)]
-    #     # } for m in prompts]
-    #     states = [{
-    #         "messages": m,
-    #         "prompt_ids": [],
-    #         "completed": False,
-    #         "completion_ids": [],
-    #         "completion_mask": [],
-    #         "images": [bs64_image(m)]
-    #     } for m in prompts]
-    #     # main loop
-    #     while not all_completed:
-    #         states = self.step(states, llm, custom_sp)
-    #         all_completed = all(state["completed"] for state in states)
-
-    #     # completion_messages = [s["messages"][s["prompt_messages"]:] for s in states]
-    #     all_messages = [s["messages"] for s in states]
-    #     completion_ids = [s["completion_ids"] for s in states]
-    #     completion_mask = [s["completion_mask"] for s in states]
-    #     all_images = [s["images"] for s in states]
-    #     output = {
-    #         "ids": completion_ids,
-    #         "messages": all_messages,
-    #         "mask": completion_mask,
-    #         "images": all_images,
-    #     }
-    #     return output
 
     def step_api(self, 
              client: Any,

@@ -6,12 +6,11 @@ import inspect
 from typing import List, Dict, Any, Callable, Union
 
 from datasets import Dataset
-from agenttrain.tools import crop
+from agenttrain.tools import crop, locate
 from PIL import Image
 from agenttrain.trainers.grpo_env_trainer import RewardFunc
 from agenttrain.envs.multiturn_env import MultiTurnEnv
 from agenttrain.parsers import XMLParser # rewrite this one
-from agenttrain.prompts.system_prompts import CROP_TOOL_PROMPT_TEMPLATE 
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
 from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
 from agenttrain.reward.tool_rubric import ToolRubric
@@ -90,12 +89,11 @@ class ToolEnv(MultiTurnEnv):
                  dataset: Dataset | None = None,
                  eval_dataset: Dataset | None = None,
                  tools: List[Callable] = [],
-                 system_prompt: str = CROP_TOOL_PROMPT_TEMPLATE,
                  few_shot: List[Dict[str, str]] = [],
-                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer")],
+                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer", "locate")],
                  env_fields: List[str | tuple[str, str]] = ["result"],
                  sampling_args={
-                     "stop": ["</crop>", "</answer>"],
+                     "stop": ["</crop>", "</answer>", "</locate>"],
                      "include_stop_str_in_output": True
                  },
                  mask_env_response: bool = True,
@@ -104,14 +102,9 @@ class ToolEnv(MultiTurnEnv):
         self.tool_schemas = [infer_schema_from_function(tool) for tool in tools]
         self.tools = {tool.__name__: tool for tool in tools}
         
-        # Format the system prompt with tool descriptions
-        # tool_descriptions = format_tool_descriptions(self.tool_schemas)
-        formatted_prompt = system_prompt.format(tool_descriptions=CROP_TOOL_DESCRIPTION,
-                                                tool_example = CROP_TOOL_EXAMPLE)
         super().__init__(
             dataset=dataset,
             eval_dataset=eval_dataset,
-            system_prompt=formatted_prompt,
             few_shot=few_shot,
             mask_env_response=mask_env_response,
             max_steps=max_steps,
@@ -161,103 +154,181 @@ class ToolEnv(MultiTurnEnv):
         except Exception:
             return False
 
-    # def call_tool(self, tool_json: str, **kwargs: Any) -> str:
-    #     """Call a tool based on JSON command."""
-    #     try:
-    #         command = json.loads(tool_json)
-    #         if not isinstance(command, dict):
-    #             return "Error: Tool command must be a JSON object, e.g. '{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"}}'"
-            
-    #         tool_name = command.get("name")
-    #         if not tool_name:
-    #             return "Error: Tool command must specify 'name', e.g. '{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"}}'"
-            
-    #         if tool_name not in self.tools:
-    #             return f"Error: Unknown tool '{tool_name}. " + "Please format your tool call as '{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"}}'"
-            
-    #         tool_func = self.tools[tool_name]
-    #         tool_args = command.get("args", {})
-    #         if isinstance(tool_args, str):
-    #             tool_schema = next((schema['args'] for schema in self.tool_schemas if schema['name'] == tool_name), None)
-    #             return f"Error: Arguments for {tool_name} must be a JSON object with schema {tool_schema}, not a string." 
-            
-    #         # Call the tool function with arguments
-    #         result = tool_func(**tool_args)
-    #         return str(result)
-    #     except json.JSONDecodeError:
-    #         return "Error: Invalid JSON format. Please format your tool call as '{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"}}'"
-    #     except Exception as e:
-    #         return f"Error: {str(e)}. " + "Please format your tool call as '{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\", \"arg2\": \"value2\"}}'"
-
-    def call_tool(self, tool_cmd: str, img: Image.Image) -> Any:
+    def call_crop(self, tool_cmd: str, images: List[Image.Image]):
         """
-        仅支持调用 crop，格式必须是：
-            crop((x1, y1), (x2, y2))
-        img 参数直接由调用者通过关键字参数传入。
-
-        示例：
-            call_tool([crop], "crop((10, 20), (110, 100))", img=your_image)
+        1. Convert Crop usage: 
+        (Image_0, (10, 20), (110, 100)) ->
+        crop(
+            image: Image.Image,
+            top_left: Tuple[int, int],
+            bottom_right: Tuple[int, int]
+        )
+        2. Perform the crop operation on the specified image.
+        Args:
+            tool_cmd (str): The command string containing image name, id_num, and coordinates.
+            images (List[Image.Image]): List of images available for cropping.
+        Returns:
+            Tuple[bytes, str]:
+                cropped image as PNG bytes,
+                message -> As text describing the crop operation
+                offset -> For calculating the coordinates relative to the original image
+                imgae id_num -> The index of the image in the images list
         """
-        name = "crop"
-        usage = f"{name}((x1, y1), (x2, y2))"
         try:
-            nums = re.findall(r"-?\d+", tool_cmd)
-            if len(nums) != 4:
-                raise ValueError(f"Extracted {len(nums)} numbers, expected 4")
-            x1, y1, x2, y2 = map(int, nums)
+            # extract image name, id_num, and coordinates from the tool command
+            pattern = re.compile(
+                r"""\(?\s*
+                    ([A-Za-z0-9_-]+)      # ① image_name  诸如 Image
+                    _(\d+)                # ② id_num      必须带下划线和数字
+                    \s*,\s*
+                    \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)   # ③④ x1,y1
+                    \s*,\s*
+                    \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)   # ⑤⑥ x2,y2
+                    \s*\)?
+                """,
+                re.VERBOSE,
+            )
+            m = pattern.fullmatch(tool_cmd)
+            
+            if m:
+                image_name, id_num, x1, y1, x2, y2 = m.groups()
+                id_num = int(id_num)
+                x1, y1, x2, y2 = map(int, (x1, y1, x2, y2))
             top_left = (x1, y1)
             bottom_right = (x2, y2)
-            
+            img = images[id_num]
             # 4. 真正调用 crop，并返回结果
-            return crop(img, top_left, bottom_right)
+            data, message, off_set = crop(img, top_left, bottom_right)
+            return data, message, off_set, id_num
 
         except Exception as e:
-            # print(f"Error calling tool {e}")
-            return None, f"Wrong Format:{usage}"
+            usage = (
+                f"<crop>(Image_0,(x1, y1), (x2, y2))</crop>, "
+                "The first argument is a string, which record the image name with an ID, e.g. Image_0 "
+                "and the second and third arguments are tuples representing the top-left and bottom-right coordinates."
+            )
+            return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
 
-    def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , **kwargs: Any) -> Dict[str, Any]:
+    def call_locate(self, tool_cmd: str, images: List[Image.Image]) -> bytes:
+        """
+        1. Convert Locate usage:
+        (Image_0, query) ->
+        locate(
+            image: Image.Image,
+            query: str
+        )
+        2. Perform the locate operation on the specified image.
+        Args:
+            tool_cmd (str): The command string containing image name and query.
+            img (Image.Image): The image to search within.
+        Returns:
+            Tuple[bytes, str]:
+                cropped image as PNG bytes,
+                message -> As text describing the locate operation
+                offset -> For calculating the coordinates relative to the original image
+        """
+        try:
+            # 1. Extract image name and query from the tool command
+            pattern = re.compile(
+                r"""\(?\s*                 # 可选左括号 + 空格
+                    [A-Za-z]+_(\d+)        # ① 数字 ID（捕获）  e.g. 0 / 123
+                    \s*,\s*                # 逗号分隔
+                    (.*?)                  # ② query（捕获，非贪婪）
+                    \s*\)?\s*$             # 可选右括号 + 尾部空白
+                """,
+                re.VERBOSE,
+            )
+            m = pattern.fullmatch(tool_cmd)
+            if m:
+                id_num   = int(m.group(1))   # → 0
+                query    = m.group(2)        # → "what is shown here?"
+            
+            # 2. 真正调用 crop，并返回结果
+            img = images[id_num]
+            data, message, off_set = locate(img, query)
+            return data, message, off_set, id_num
+
+        except Exception as e:
+            usage = (
+                f"<locate>(Image_0, query)</locate>, "
+                "The first argument is a string, which record the image name with an ID, e.g. Image_0 "
+                "and the second argument is a string representing the element to locate in the image."
+            )
+            return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
+        
+
+    def call_tool(self, category: str ,tool_cmd: str, images: List[Image.Image]) -> Any:
+        """
+        Call different tools
+        Returns:
+            Tuple[bytes, str]:
+                image as PNG bytes,
+                message -> As text describing the crop operation
+                offset -> For calculating the coordinates relative to the original image
+                id_num -> The index of the image in the images list
+        """
+        if category == "crop":
+            return self.call_crop(tool_cmd, images)
+        elif category == "locate":
+            return self.call_locate(tool_cmd, images)
+        else:
+            return None, f"<|Tool_Error|>, Unsupported tool category: {category}", None, None
+
+
+    def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , images_offset: List[tuple], **kwargs: Any) -> Dict[str, Any]:
         try:
             parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
             # print(f"Parsed content: {parsed}")
             if hasattr(parsed, 'crop') and parsed.crop is not None:
-                image_entry = next(item for item in messages[0]["content"] if item["type"] == "image_url")
-                data_uri = image_entry["image_url"]["url"]
-                b64_data = data_uri.split(",", 1)[1]
-                img_bytes = base64.b64decode(b64_data)
-                img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-                crop_bytes, info_message = self.call_tool(parsed.crop, img)
-                if crop_bytes:
-                    crop_b64 = base64.b64encode(crop_bytes).decode('utf-8')
-                    cropped_img = Image.open(io.BytesIO(crop_bytes)).convert("RGB")
-                    images.append(cropped_img) # add to images list for further processing
-                    multimodal_message = [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{crop_b64}"}
-                            },
-                            {
-                                "type": "text",
-                                "text": info_message
-                            }
-                        ]
-                    tool_feedback =  {"role": "user", "content": multimodal_message}
-                    messages.append(tool_feedback)
-                    return
-                    
-                else:
-                    tool_feedback = {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"Error: {info_message}"}
-                        ]
-                    }
-                    messages.append(tool_feedback)
-                    return
+                category = 'crop'
+                tool_cmd = parsed.crop
+            elif hasattr(parsed, 'locate') and parsed.locate is not None:
+                category = 'locate'
+                tool_cmd = parsed.locate
+            else: # No valid tool command found
+                tool_feedback = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "No valid tool command found in the last message."}
+                    ]
+                }
+                messages.append(tool_feedback)
+                return
+            
+            crop_bytes, info_message, off_set, id_num = self.call_tool(category, tool_cmd, images)
+            if crop_bytes:
+                crop_b64 = base64.b64encode(crop_bytes).decode('utf-8')
+                cropped_img = Image.open(io.BytesIO(crop_bytes)).convert("RGB")
+                images.append(cropped_img) # add to images list for further processing
+                
+                # Calculate and add offset
+                dx = off_set[0]
+                dy = off_set[1]
+                x_off_set = images_offset[id_num][0] + dx
+                y_off_set = images_offset[id_num][1] + dy
+                off_set = (x_off_set, y_off_set)
+                images_offset.append(off_set)
+                
+                info_message = f"[Image_{len(images)-1} is displayed above, offset: {off_set}]\n{info_message}"
+                multimodal_message = [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{crop_b64}"}
+                        },
+                        {
+                            "type": "text",
+                            "text": info_message
+                        }
+                    ]
+                tool_feedback =  {"role": "user", "content": multimodal_message}
+                messages.append(tool_feedback)
+                return
+                
             else:
                 tool_feedback = {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "No valid tool command found in the last message.\ncrop tool Usage: crop((x1, y1), (x2, y2))"}
+                        {"type": "text", "text": f"Error: {info_message}"}
                     ]
                 }
                 messages.append(tool_feedback)

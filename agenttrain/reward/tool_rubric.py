@@ -1,40 +1,76 @@
 import re
 import ast
 import json
+import base64
+from io import BytesIO
+from PIL import Image
 from typing import List, Dict, Callable, Any, Tuple
 from agenttrain.parsers import XMLParser # rewrite this one
 from agenttrain.reward.rubric import Rubric
 from agenttrain.reward.math_grader import grade
 from agenttrain.utils.data_utils import parse_crop_bbox_from_text
 
-def compute_iou(pred_bbox, gt_bbox):
+def extract_first_image(conv_list):
+    for msg in conv_list:
+        if msg.get("role") == "user":
+            for part in msg.get("content", []):
+                if part.get("type") == "image_url":
+                    url = part["image_url"]["url"]
+                    prefix = "data:image/png;base64,"
+                    if url.startswith(prefix):
+                        b64_str = url[len(prefix):]
+                        image_data = base64.b64decode(b64_str)
+                        return Image.open(BytesIO(image_data))
+    return None
+
+def compute_iou(pred_bbox, gt_bbox, img_size):
     """
     pred_bbox, gt_bbox: (x1, y1, x2, y2)
-    返回 IoU（取值范围 [0,1]），如果没有交集返回 0.0
+    img_size: (width, height)
+    返回:
+      - 正常情况下：IoU ∈ [0,1]
+      - 边界无效 / 尺寸过小 / 无交集：0.0
     """
-    # 1. 计算交集坐标
+    width, height = img_size
+
+    def is_valid(bbox):
+        x1, y1, x2, y2 = bbox
+        # 1) 越界检查
+        if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
+            return False
+        # 2) 坐标逻辑检查
+        if x2 <= x1 or y2 <= y1:
+            return False
+        # 3) 最小尺寸检查（至少 28×28）
+        if (x2 - x1) < 28 or (y2 - y1) < 28:
+            return False
+        return True
+
+    # 任意一个 bbox 不合法，则直接返回 0.0
+    if not is_valid(pred_bbox):
+        return 0.0
+
+    # 下面是标准的 IoU 计算
     xA = max(pred_bbox[0], gt_bbox[0])
     yA = max(pred_bbox[1], gt_bbox[1])
     xB = min(pred_bbox[2], gt_bbox[2])
     yB = min(pred_bbox[3], gt_bbox[3])
 
-    # 2. 交集宽高
     inter_w = max(0, xB - xA)
     inter_h = max(0, yB - yA)
     inter_area = inter_w * inter_h
+    if inter_area == 0:
+        return 0.0
 
-    # 3. 各自面积
-    pred_area = max(0, pred_bbox[2] - pred_bbox[0]) * max(0, pred_bbox[3] - pred_bbox[1])
-    gt_area   = max(0, gt_bbox[2]   - gt_bbox[0]) * max(0, gt_bbox[3]   - gt_bbox[1])
-
-    # 4. 防零除
+    pred_area = (pred_bbox[2] - pred_bbox[0]) * (pred_bbox[3] - pred_bbox[1])
+    gt_area   = (gt_bbox[2]   - gt_bbox[0]) * (gt_bbox[3]   - gt_bbox[1])
     union = pred_area + gt_area - inter_area
     if union <= 0:
         return 0.0
 
     return inter_area / union
 
-def average_crop_reward(crop_bboxs, gt_bbox, weights=None):
+def average_crop_reward(crop_bboxs, gt_bbox, img_size, weights=None, ):
     """
     crop_bboxs: List[Tuple[int,int,int,int]]，模型每条 <crop> 指令对应的 box
     gt_bbox:   Tuple[int,int,int,int]，ground-truth box
@@ -46,7 +82,7 @@ def average_crop_reward(crop_bboxs, gt_bbox, weights=None):
         return 0.0
 
     # 1) 计算每条 crop 的IoU：交集面积 /并集面积
-    coverages = [compute_iou(pred, gt_bbox) for pred in crop_bboxs]
+    coverages = [compute_iou(pred, gt_bbox, img_size) for pred in crop_bboxs]
 
     # 2) 准备权重，默认等权
     if weights is None:
@@ -85,7 +121,7 @@ class ToolRubric(Rubric):
             0.0,
             1.0,
             0.7,
-            0.1,
+            0.4,
             0.1,
             0.1,
         ]
@@ -187,7 +223,8 @@ class ToolRubric(Rubric):
         completions: List[Any],
         answer: List[Tuple[int, int, int, int]],
         task: List[str],
-        **kwargs
+        all_images, 
+        all_images_offset,
     ) -> List[float | None]:
         """
         Reward function that checks if the predicted point lies within the ground-truth bounding box.
@@ -204,17 +241,37 @@ class ToolRubric(Rubric):
         """
         rewards: List[float | None] = []
         
-        for completion, box, t in zip(completions, answer, task):
+        for completion, box, t, images, images_offset in zip(completions, answer, task, all_images, all_images_offset):
             # parser ground-truth to tuple
             if t == "vg":
                 # 1. 取出模型最后一句回答并清洗
                 raw = str(self.get_last_answer(completion)).strip()
+                raw = f'<answer>{raw}</answer>'
                 
                 try:
                     # 2. 用正则提取两个整数（支持负数）
-                    nums = re.findall(r"-?\d+", raw)
-                    x, y = int(nums[0]), int(nums[1])
-                    # print(f"Extracted coordinates: ({x}, {y}).")
+                    pattern = re.compile(
+                        r"""
+                            <answer>                # 起始标签
+                            \s*\(\s*
+                            Image_(\d+)             # ① id_num
+                            \s*,\s*
+                            \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)  # ②③ x, y
+                            \s*\)\s*
+                            </answer>               # 结束标签
+                        """,
+                        re.VERBOSE
+                    )
+                    m = pattern.search(raw)
+                    if m:
+                        id_num, x, y = m.groups()
+                        id_num = int(id_num)
+                        # print(f"VG id_num: {id_num}, x: {x}, y: {y}.")
+                        # print(f'images_offset: {images_offset}')
+                        x, y   = int(x), int(y)
+                        x = x + images_offset[id_num][0]
+                        y = y + images_offset[id_num][1]
+                        # print(f"VG adjusted x: {x}, y: {y}.")
                     
                     # 3. 拆箱 ground-truth
                     if isinstance(box, str):
@@ -231,8 +288,10 @@ class ToolRubric(Rubric):
                     # print(f"VG reward: {reward}.")
 
                 except Exception:
+                    # print(f"Error parsing VG response: {raw}, reward set to 0.0.")
                     reward = 0.0
             else:
+                # print(f"Task type '{t}' is not 'vg', reward set to None.")
                 reward = None
             
             rewards.append(reward)
@@ -254,10 +313,10 @@ class ToolRubric(Rubric):
             rewards.append(reward)
         return rewards
     
-    def correct_answer_reward_func(self, completions, answer, task, **kwargs) -> List[float | None]:
+    def correct_answer_reward_func(self, completions, answer, task, all_images, all_images_offset, **kwargs) -> List[float | None]:
         """Reward function that checks if the final answer matches the expected answer."""
         rewards = []
-        for completion, ans, t in zip(completions, answer, task):
+        for completion, ans, t, images, images_offset, in zip(completions, answer, task, all_images, all_images_offset):
             reward = None
             if t == "mc":
                 try:
@@ -276,44 +335,61 @@ class ToolRubric(Rubric):
                     reward = None
             elif t == "vg":
                 try:
-                    reward = self.vg_reward_func([completion], [ans], [t], **kwargs)[0]
+                    reward = self.vg_reward_func(
+                    completions=[completion],
+                    answer=[ans],
+                    task=[t],
+                    all_images=[images],
+                    all_images_offset=[images_offset],
+                    )[0]
                 except:
+                    # print(f"Error in vg reward function for task {t}. reward set to None.")
                     reward = None
             else:
                 reward = None
             rewards.append(reward)
         return rewards
 
-    def correct_crop_func(self, completions, answer, **kwargs) -> List[float | None]:
+    def correct_crop_func(self, completions, answer, all_images, all_images_offset, **kwargs) -> List[float | None]:
         rewards: List[float | None] = []
         
-        for completion, box in zip(completions, answer):
+        for completion, box, images, images_offset in zip(completions, answer, all_images, all_images_offset):
             # 1. extract the crop bbox from assistant messages
             crop_bboxs: List[Tuple[int,int,int,int]] = []
-            for msg in completion:
-                if msg.get("role") != "assistant":
-                    continue
-                for item in msg.get("content", []):
-                    if item.get("type") != "text":
-                        continue
-                    text = item["text"]
-                    parsed = parse_crop_bbox_from_text(text)
-                    if parsed is not None:
-                        crop_bboxs.append(parsed)
-            
             try:
-                # 2. 拆箱 ground-truth
-                if isinstance(box, str):
-                    try:
-                        box = tuple(ast.literal_eval(box))
-                    except Exception:
-                        nums2 = re.findall(r"-?\d+", box)
-                        box = tuple(map(int, nums2))
-                # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
-                # print(f"Predicted crop boxes: {crop_bboxs}.")
-                # print(f"Ground-truth box: {box}.")
-                reward = average_crop_reward(crop_bboxs, box)
-                # print(f"Crop reward: {reward}.")
+                for msg in completion:
+                    if msg.get("role") != "assistant":
+                        continue
+                    for item in msg.get("content", []):
+                        if item.get("type") != "text":
+                            continue
+                        text = item["text"]
+                        id_num, top_left, bottom_right = parse_crop_bbox_from_text(text)
+                        if top_left is not None:
+                            dx, dy = images_offset[id_num]
+                            x1, y1 = top_left
+                            x2, y2 = bottom_right
+                            
+                            # Adjust coordinates based on image offset
+                            parsed = (x1 + dx, y1 + dy, x2 + dx, y2 + dy)
+                            crop_bboxs.append(parsed)
+                
+                    # 2. 拆箱 ground-truth
+                    if isinstance(box, str):
+                        try:
+                            box = tuple(ast.literal_eval(box))
+                        except Exception:
+                            nums2 = re.findall(r"-?\d+", box)
+                            box = tuple(map(int, nums2))
+
+                    # extract image size from completion
+                    first_image = extract_first_image(completion)
+                    if first_image is None:
+                        raise ValueError("No image found in the conversation.")
+                    img_size = first_image.size # (width, height)
+                    
+                    reward = average_crop_reward(crop_bboxs, box, img_size)
+                    # print(f"Crop reward: {reward}.")
 
             except Exception:
                 reward = 0.0
@@ -337,19 +413,26 @@ class ToolRubric(Rubric):
                 if msg['role'] == 'assistant':
                     # Use parser to check for tool tag
                     parsed = self.parser.parse(msg['content'][0]["text"])
-                    if hasattr(parsed, 'tool') and parsed.tool is not None:
+                    if hasattr(parsed, 'crop') and parsed.crop is not None:
                         # Found a properly formatted tool message
                         if i + 1 < len(trajectory) and trajectory[i + 1]['role'] == 'user':
                             tool_attempts += 1
-                            # Check response with env_parser
                             multiplier = 1.0 
-                            response = str(parsed.tool)
+                            response = str(parsed.crop)
                             if (("sympy" in response) or ("numpy" in response)) and len(response) > 100:
                                 multiplier = 1.5
                             else:
-                                multiplier = 0.5
-                            parsed_response = self.env_parser.parse(trajectory[i + 1]['content'])
-                            if hasattr(parsed_response, 'result') and parsed_response.result is not None and not parsed_response.result.startswith("Error:"):
+                                multiplier = 1.0
+                                
+                            # Extract tool response text
+                            tool_response = None
+                            for elem in trajectory[i + 1]['content']:
+                                # 确保 elem 是个 dict 并包含 'text' 键
+                                if isinstance(elem, dict) and "text" in elem:
+                                    tool_response = elem["text"]
+                                    break
+                                
+                            if '<|Tool_Error|>' not in tool_response:
                                 successful_executions += 1 * multiplier
             
             # Calculate reward

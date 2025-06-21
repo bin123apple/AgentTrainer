@@ -1,16 +1,71 @@
 import random
 import json
-import re
+import re, textwrap
 from typing import List, Dict, Callable, Any
 import copy
-
+import re, base64, io
+from typing import Any, List, Tuple, Optional
+from PIL import Image
 from datasets import Dataset, load_dataset, concatenate_datasets # type: ignore
 
-
+import os
+import datetime
 import json
 import random
 from datasets import Dataset
 from typing import List, Dict, Optional
+
+import copy, re, base64, io, wandb
+from typing import Any, List, Tuple, Optional
+from PIL import Image
+
+PLACEHOLDER = "<IMAGE>"
+B64_PATTERN = re.compile(r"^data:image\/\w+;base64,(.+)", re.I)
+
+# ❶ 安全占位 —— 不改动原 image_url（保留图片）
+def sanitize_dialogs(dialogs: List[List[dict]], placeholder: str = PLACEHOLDER):
+    safe = copy.deepcopy(dialogs)
+    for dialog in safe:
+        for msg in dialog:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for piece in content:
+                    if piece.get("type") == "image_url":
+                        # 单独存 placeholder，不覆盖真 URL
+                        piece["image_url_placeholder"] = placeholder
+    return safe
+
+# ❷ 单条 content → 文本 & 图片列表
+def _b64_to_pil(data_url: str) -> Optional[Image.Image]:
+    m = B64_PATTERN.match(data_url or "")
+    if not m:
+        return None
+    try:
+        return Image.open(io.BytesIO(base64.b64decode(m.group(1)))).convert("RGB")
+    except Exception:
+        return None
+
+def flatten_text_and_images(
+    content: Any, placeholder: str = PLACEHOLDER
+) -> Tuple[str, Optional[List[Image.Image]]]:
+    if isinstance(content, str):
+        return content, None
+    save_dir = "backup_images"
+    os.makedirs(save_dir, exist_ok=True)
+    if isinstance(content, list):
+        parts = []
+        for piece in content:
+            if piece.get("type") == "image_url":
+                img = _b64_to_pil(piece.get("image_url").get("url", ""))
+                filename = f"image_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+                save_path = os.path.join(save_dir, filename)
+                img.save(save_path)
+                parts.append(f"{placeholder}(saved to {save_path})")
+            else:
+                parts.append(piece.get("text", ""))
+        return "".join(parts)
+
+    return str(content)
 
 def preprocess_dataset(
     dataset_name: str,
@@ -68,92 +123,34 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
 
     return dataset.flat_map(extract_qa_pairs)
 
-# def preprocess_dataset_uground(
-#     dataset: Dataset,
-# ) -> Dataset:
-#     """
-#     对 osunlp/UGround-V1-Data 进行预处理：
-#       1. 从 `conversations` 字段提取以 "Description:" 开头的内容作为 question
-#       2. 取该对话列表的最后一个 message.value 作为 groundtruth answer
-#       3. 调用 format_dataset 生成最终的 prompt/answer 结构
-
-#     Args:
-#         dataset:      原始 Dataset，包含 `conversations` 字段（JSON 字符串）
-#         system_prompt: 可选的 system 消息
-#         few_shot:     可选的 few-shot 示例列表
-#         fewshot_prob: 使用 few-shot 的概率
-
-#     Returns:
-#         一个新 Dataset，每个例子包含：
-#           - "prompt": List[{"role":..., "content":...}]
-#           - "answer": str
-#     """
-#     # 1) 先 map 出 question & answer
-#     def extract_qa(example):
-#         """
-#         从 example["conversations"] 中：
-#         - 抽取位于 'Description:' 与下一个 'Answer:' 之间的内容作为 question
-#         - 取最后一条消息的 value 作为 answer
-#         """
-#         conv_list = json.loads(example["conversations"])
-#         question = ""
-#         # 在所有消息中找带 Description: 的那条
-#         for msg in conv_list:
-#             val = msg.get("value", "")
-#             if "Description:" in val:
-#                 start = val.find("Description:") + len("Description:")
-#                 # 尝试找 Answer:
-#                 end_idx = val.find("Answer:", start)
-#                 if end_idx == -1:
-#                     # 如果没找到，取到字符串末尾
-#                     question = val[start:].strip()
-#                 else:
-#                     question = val[start:end_idx].strip()
-#                 break
-
-#         # groundtruth 仍取最后一条消息
-#         answer = conv_list[-1].get("value", "").strip()
-#         return {"question": question, "answer": answer}
-
-#     qa_ds = dataset.map(extract_qa, num_proc=10)
-    
-#     return qa_ds
-
 def parse_crop_bbox_from_text(text: str):
     """
-    从形如 <crop>((x1,y1),(x2,y2))</crop> 的文本中提取坐标，
-    返回 (x1, y1, x2, y2) 四元组，找不到时返回 None。
+    从形如 <crop>(Image_0, (10, 20), (110, 100))</crop> 的文本中提取:
+      - id_num（整数）
+      - top_left，tuple (x1, y1)
+      - bottom_right，tuple (x2, y2)
+    找不到时返回 (None, None, None)。
     """
-    # 匹配 <crop>( (x1,y1) , (x2,y2) )</crop>
-    pattern = re.compile(
-        r"<crop>\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*,\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)\s*</crop>"
-    )
+    pattern = re.compile(textwrap.dedent(r"""
+        <crop>\s*                       # <crop> 标签
+        \(\s*                           # 外层左括号
+        ([A-Za-z0-9_-]+)_(\d+)          # ① 图名 Image  ② 数字 ID
+        \s*,\s*
+        \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)  # ③ x1, ④ y1
+        \s*,\s*
+        \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)  # ⑤ x2, ⑥ y2
+        \s*\)\s*                        # 外层右括号
+        </crop>                         # 结束标签
+    """), re.VERBOSE)
+
     m = pattern.search(text)
     if not m:
-        return None
-    x1, y1, x2, y2 = map(int, m.groups())
-    return x1, y1, x2, y2
+        return None, None, None
+    
+    # 解包并转换类型
+    image_name, id_str, x1, y1, x2, y2 = m.groups()
+    return int(id_str), (int(x1), int(y1)), (int(x2), int(y2))
 
-def sanitize_dialogs(dialogs, placeholder="<IMAGE>"):
-    """
-    Return a deep-copied list of dialogs with all image_url fields replaced by the placeholder.
-
-    Args:
-        dialogs (List[List[Dict]]): A list of dialogs, each dialog is a list of message dicts.
-        placeholder (str): The string to substitute for each image URL.
-
-    Returns:
-        List[List[Dict]]: A new list of dialogs with image_url fields replaced.
-    """
-    sanitized = copy.deepcopy(dialogs)
-    for dialog in sanitized:
-        for msg in dialog:
-            content = msg.get("content")
-            if isinstance(content, list):
-                for piece in content:
-                    if piece.get("type") == "image_url" and piece.get("image_url") is not None:
-                        piece["image_url"] = placeholder
-    return sanitized
 
 
 def format_prompt(prompt: str,

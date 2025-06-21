@@ -129,7 +129,7 @@ class WeightSyncWorkerExtension:
         weight = torch.empty(shape, dtype=dtype, device=self.device)
         self.pynccl_comm.broadcast(weight, src=self.client_rank)
         self.pynccl_comm.group.barrier()
-        print(f"Received weight for {name}")
+        # print(f"Received weight for {name}")
         name = name.replace(".language_model","")
         if 'visual' in name:
             name = name.replace("model.","")

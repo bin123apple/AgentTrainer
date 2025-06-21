@@ -22,14 +22,6 @@ class Environment(ABC):
         self.reward_weights = []
 
     @abstractmethod
-    def get_dataset(self, **kwargs: Any) -> Dataset | None:
-        pass
-
-    @abstractmethod
-    def get_eval_dataset(self, **kwargs: Any) -> Dataset | None:
-        pass
-
-    @abstractmethod
     def get_reward_funcs(self, **kwargs: Any) -> List[RewardFunc]:
         pass
     
