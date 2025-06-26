@@ -104,119 +104,21 @@ class ToolRubric(Rubric):
         self.env_parser = env_parser
         self.tools = {tool.__name__: tool for tool in tools}
         self.reward_funcs = [
-            self.mc_reward_func,
-            self.math_reward_func,
-            self.code_reward_func,
-            self.vg_reward_func,
             self.correct_answer_reward_func,
             self.correct_crop_func,
+            self.correct_extract_func,
             self.tool_execution_reward_func,
             self.parser.get_format_reward_func(),
             self.parser.get_xml_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
-            0.0,
-            0.0,
-            0.0,
-            0.0,
             1.0,
+            0.7,
             0.7,
             0.4,
             0.1,
             0.1,
         ]
-        for tool_name in self.tools.keys():
-            self.reward_funcs.append(self.get_named_tool_reward_func(tool_name))
-            self.reward_weights.append(0.2)
-            # FIXME: Do we still need these two rewards?
-            # self.reward_funcs.append(self.get_named_tool_count_reward_func(tool_name))
-            # self.reward_weights.append(0.0)
-            # self.reward_funcs.append(self.get_named_tool_attempt_reward_func(tool_name))
-            # self.reward_weights.append(0.0)
-
-    def evaluate_code(self, code_str, answer, **kwargs) -> float:
-        import io
-        import sys
-        import signal
-        from contextlib import redirect_stdout
-        
-        try:
-            test_cases = json.loads(answer)['test_cases']
-        except:
-            return 0.0
-        # strip ```python and ``` if present at the beginning and end of the code
-        code_str = code_str.strip()
-        if code_str.startswith('```python'):
-            code_str = code_str[9:]
-        elif code_str.startswith('```'):
-            code_str = code_str[3:]
-        if code_str.endswith('```'):
-            code_str = code_str[:-3]
-        code_str = code_str.strip()
-
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Code execution timed out")
-
-        def normalize_output(output):
-            # Normalize line endings and whitespace
-            return '\n'.join(line.strip() for line in output.splitlines())
-        
-        total_cases = 0
-        passed = 0
-        
-        for test in test_cases:
-            output = io.StringIO()
-            sys.stdin = io.StringIO(test['input'])
-            try:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(10)
-                with redirect_stdout(output):
-                    exec(code_str)
-                signal.alarm(0)
-                actual = normalize_output(output.getvalue())
-                expected = normalize_output(test['output'])
-                
-                # Compare each line individually
-                actual_lines = actual.splitlines()
-                expected_lines = expected.splitlines()
-                total_cases += len(expected_lines)
-                for a, e in zip(actual_lines, expected_lines):
-                    if a == e:
-                        passed += 1
-                    
-            except Exception as e:
-                sys.stdin = sys.__stdin__
-                return 0.0
-            sys.stdin = sys.__stdin__
-        
-        return passed / total_cases if total_cases else 0.0
-        
-
-    def code_reward_func(self, completions, answer, task, **kwargs) -> List[float | None]:
-        """Reward function that checks if the final answer matches the expected answer."""
-        rewards = []
-        for completion, ans, t in zip(completions, answer, task):
-            if t == "code":
-                response = str(self.get_last_answer(completion))
-                reward = self.evaluate_code(response, ans, **kwargs)
-            else:
-                reward = None
-            rewards.append(reward)
-        return rewards
-    
-    def mc_reward_func(self, completions, answer, task, **kwargs) -> List[float | None]:
-        """Reward function that checks if the final answer matches the expected answer."""
-        rewards = []
-        for completion, ans, t in zip(completions, answer, task):
-            if t == "mc":
-                response = str(self.get_last_answer(completion)) #[0]
-                if len(response.strip()) > 0 and isinstance(response, str):
-                    response = response.strip()[0]
-                reward = 1.0 if response == ans.strip() else 0.0
-            else:
-                reward = None
-            rewards.append(reward)
-        return rewards
 
     def vg_reward_func(
         self,
@@ -397,6 +299,127 @@ class ToolRubric(Rubric):
             rewards.append(reward)
         
         return rewards
+    
+    def correct_extract_func(
+        self,
+        completions,              # List[List[MessageDict]]
+        answer,                   # List[GT bbox | str]
+        all_images,               # List[List[PIL.Image]]
+        all_images_offset,        # List[List[Tuple[int,int]]]
+        **kwargs,
+    ) -> list[float | None]:
+        """
+        Evaluate whether the assistant’s <extract>(...) calls correctly cover the
+        ground-truth bbox for each sample.
+
+        Returns
+        -------
+        List[float | None]
+            One reward per sample: 1.0 if any extract region fully contains the GT
+            bbox, otherwise 0.0. (None is never returned here, kept for API parity.)
+        """
+        import re, ast
+        from typing import Optional, Tuple, List
+
+        debug: bool = kwargs.get("debug", False)
+
+        # ------------------------------------------------------------------
+        # === 1. 内部工具 ===
+        # ------------------------------------------------------------------
+        _EXTRACT_RE = re.compile(
+            r"<extract>\s*\(\s*['\"]?Image_(\d+)['\"]?\s*,\s*['\"]?"
+            r"(left|center|right)['\"]?\s*,\s*['\"]?(top|center|bottom)['\"]?\s*\)\s*</extract>",
+            re.I,
+        )
+
+        def _parse_extract(text: str) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+            """从文本片段中抽取 (image_id, x_pos, y_pos)。若不存在返回 (None, None, None)。"""
+            m = _EXTRACT_RE.search(text)
+            if not m:
+                return None, None, None
+            return int(m.group(1)), m.group(2).lower(), m.group(3).lower()
+
+        def _quadrant_bbox(w: int, h: int, x_pos: str, y_pos: str) -> Tuple[int, int, int, int]:
+            """将 (x_pos, y_pos) 转成覆盖 ¼ 图像的 bbox。"""
+            half_w, half_h = w // 2, h // 2
+            x0 = 0 if x_pos == "left" else (w - half_w) // 2 if x_pos == "center" else w - half_w
+            y0 = 0 if y_pos == "top"  else (h - half_h) // 2 if y_pos == "center" else h - half_h
+            return (x0, y0, x0 + half_w, y0 + half_h)
+
+        def _contains(outer: Tuple[int, int, int, int], inner: Tuple[int, int, int, int]) -> bool:
+            """inner bbox 是否被 outer bbox 完全包住？"""
+            ox1, oy1, ox2, oy2 = outer
+            ix1, iy1, ix2, iy2 = inner
+            return ox1 <= ix1 and oy1 <= iy1 and ox2 >= ix2 and oy2 >= iy2
+
+        def _extract_reward(
+            bboxes: List[Tuple[int, int, int, int]],
+            gt: Tuple[int, int, int, int]
+        ) -> float:
+            """
+            对 assistant 的每一个 <extract> 框：
+                - 若完全包住 ground-truth → 得 1 分
+                - 否则                       → 得 0 分
+            返回所有框得分的平均值。
+            """
+            if not bboxes:
+                return 0.0
+
+            hits = sum(1 for b in bboxes if _contains(b, gt))
+            return hits / len(bboxes)
+
+        # ------------------------------------------------------------------
+        # === 2. 主循环 ===
+        # ------------------------------------------------------------------
+        rewards: List[float] = []
+
+        for completion, gt_box, images, offsets in zip(
+            completions, answer, all_images, all_images_offset
+        ):
+            try:
+                # 2-1. 收集所有 <extract> 产生的 bbox
+                extract_bboxes: list[Tuple[int, int, int, int]] = []
+
+                for msg in completion:
+                    if msg.get("role") != "assistant":
+                        continue
+                    for part in msg.get("content", []):
+                        if part.get("type") != "text":
+                            continue
+                        img_id, x_pos, y_pos = _parse_extract(part["text"])
+                        print(f"Parsed extract: img_id={img_id}, x_pos={x_pos}, y_pos={y_pos}")
+                        if x_pos is None:        # 该片段无 <extract>
+                            continue
+
+                        w, h = images[img_id].size
+                        bbox = _quadrant_bbox(w, h, x_pos, y_pos)   # 原图坐标
+                        dx, dy = offsets[img_id]                    # 全景图偏移
+                        x1, y1, x2, y2 = bbox
+                        extract_bboxes.append((x1 + dx, y1 + dy, x2 + dx, y2 + dy))
+
+                # 2-2. 解析 ground-truth
+                if isinstance(gt_box, str):
+                    try:
+                        gt_box = tuple(ast.literal_eval(gt_box))
+                    except Exception:
+                        nums = [int(n) for n in re.findall(r"-?\d+", gt_box)]
+                        gt_box = tuple(nums)
+
+                # 2-3. 计算奖励
+                reward = _extract_reward(extract_bboxes, gt_box)
+
+                if debug:
+                    print(f"GT: {gt_box} | Extracts: {extract_bboxes} | Reward={reward}")
+
+            except Exception as e:
+                if debug:
+                    print(f"[correct_extract_func] Error: {e}")
+                reward = 0.0
+
+            rewards.append(reward)
+
+        return rewards
+
     
     def tool_execution_reward_func(self, completions: List[List[Dict[str, str]]], **kwargs) -> List[float]:
         """

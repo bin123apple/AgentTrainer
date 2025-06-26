@@ -40,8 +40,8 @@ from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
 from agenttrain.utils.torch_ope import nanmin, nanmax
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
-from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, LOCATE_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, LOCATE_TOOL_EXAMPLE
+from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, SCAN_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, SCAN_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, MERGE_TOOL_EXAMPLE
 from agenttrain.utils.data_utils import sanitize_dialogs, flatten_text_and_images
 
 if is_wandb_available():
@@ -253,8 +253,8 @@ class GRPOEnvTrainer(GRPOTrainer):
         multimodal_inputs = []
         for prompt, image in zip(prompts, images):
             initial_prompts = CROP_SYSTEM_PROMPT.format(
-            tool_descriptions=CROP_TOOL_DESCRIPTION+LOCATE_TOOL_DESCRIPTION,
-            tool_example=CROP_TOOL_EXAMPLE+LOCATE_TOOL_EXAMPLE
+            tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION,
+            tool_example=MERGE_TOOL_EXAMPLE
             ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
             # initial_prompts = (
             #     "Output only the coordinate of one point in your response. "
@@ -430,9 +430,8 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # log to wandb  
         for i, reward_func_name in enumerate(self.reward_func_names):
-            if reward_func_name in ('correct_crop_func', 'correct_answer_reward_func', 'tool_execution_reward_func'):
-                mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
-                self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
+            mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
+            self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
 
         # 4. 应用权重并求和
         weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)

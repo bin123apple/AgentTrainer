@@ -97,7 +97,7 @@ class MultiTurnEnv(Environment):
             while i < n:
                 # 取 [i, i+chunk_size) 这一批（最后一批如果不足 chunk_size 也会取到末尾）
                 batch = messages_to_step[i : i + n]
-                # print(f"Processing batch {i // n}, : size: {len(batch)}")
+                # print(f"Sample message: {batch[0]}")
                 resp = llm.chat(
                     batch,
                     n=1,

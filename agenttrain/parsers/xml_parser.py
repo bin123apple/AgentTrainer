@@ -148,21 +148,25 @@ class XMLParser:
                                 # Tag exists but content wasn't properly parsed
                                 total_fields += 1
                                 field_set_present = True
-                        
+               
                         # If any alternative from this field set was present, count it
                         if field_set_present:
                             present_field_sets.add(i)
+                            
+                    # <think> 位置 & 顺序检查 ——  Support more think              
+                    think_start = content.find("<think>")
+                    think_end   = content.find("</think>")
+                    # 获取 <answer> 或工具调用标签首次出现的位置
+                    other_tags = []
+                    for tag in self._fields[0]:
+                        other_tags.append(f"<{tag}>")
+                    other_pos   = min([p for t in other_tags if (p := content.find(t)) != -1] or [len(content)+1])
+
+                    has_think_tag      = think_start != -1 and think_end != -1
+                    think_before_other = has_think_tag and think_end < other_pos
                     
                     # Calculate format score components
                     format_score = 0.0
-                    
-                    # # Check if any field from the first field set starts the message
-                    # starts_with_any_field = False
-                    # first_field_set = self._fields[0][1]  # Get alternatives for first field set
-                    # for alt in first_field_set:
-                    #     if content.strip().startswith(f"<{alt}>"):
-                    #         starts_with_any_field = True
-                    #         break
                     
                     # Check if any field from the last field set ends the message
                     ends_with_any_field = False
@@ -176,17 +180,17 @@ class XMLParser:
                     if has_any_field:
                         # Calculate the proportion of expected field sets that are present
                         field_set_ratio = len(present_field_sets) / expected_field_count
-                        format_score += 0.5 * field_set_ratio
+                        format_score += 0.25 * field_set_ratio
                     
                     if has_correct_spacing:
                         format_score += 0.25
-                    
-                    # if starts_with_any_field:
-                    #     format_score += 0.2
                         
                     if ends_with_any_field:
                         format_score += 0.25
                     
+                    if has_think_tag and think_before_other:
+                        format_score += 0.25
+                        
                     format_scores.append(format_score)
                 
                 # Return average format adherence

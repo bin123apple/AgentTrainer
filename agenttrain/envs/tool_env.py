@@ -6,7 +6,7 @@ import inspect
 from typing import List, Dict, Any, Callable, Union
 
 from datasets import Dataset
-from agenttrain.tools import crop, locate
+from agenttrain.tools import crop, extract
 from PIL import Image
 from agenttrain.trainers.grpo_env_trainer import RewardFunc
 from agenttrain.envs.multiturn_env import MultiTurnEnv
@@ -90,10 +90,10 @@ class ToolEnv(MultiTurnEnv):
                  eval_dataset: Dataset | None = None,
                  tools: List[Callable] = [],
                  few_shot: List[Dict[str, str]] = [],
-                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer", "locate")],
+                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer", "scan", "extract")],
                  env_fields: List[str | tuple[str, str]] = ["result"],
                  sampling_args={
-                     "stop": ["</crop>", "</answer>", "</locate>"],
+                     "stop": ["</crop>", "</answer>", "</extract>"],
                      "include_stop_str_in_output": True
                  },
                  mask_env_response: bool = True,
@@ -209,53 +209,105 @@ class ToolEnv(MultiTurnEnv):
             )
             return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
 
-    def call_locate(self, tool_cmd: str, images: List[Image.Image]) -> bytes:
+    def call_scan(self, tool_cmd: str, images: List[Image.Image]) -> bytes:
+        raise NotImplementedError("call_scan is not implemented yet.")
+        # """ 
+        # 1. Convert scan usage:
+        # (Image_0, query) ->
+        # scan(
+        #     image: Image.Image,
+        #     query: str
+        # )
+        # 2. Perform the scan operation on the specified image.
+        # Args:
+        #     tool_cmd (str): The command string containing image name and query.
+        #     img (Image.Image): The image to search within.
+        # Returns:
+        #     Tuple[bytes, str]:
+        #         cropped image as PNG bytes,
+        #         message -> As text describing the scan operation
+        #         offset -> For calculating the coordinates relative to the original image
+        # """
+        # try:
+        #     # 1. Extract image name and query from the tool command
+        #     pattern = re.compile(
+        #         r"""\(?\s*                 # 可选左括号 + 空格
+        #             [A-Za-z]+_(\d+)        # ① 数字 ID（捕获）  e.g. 0 / 123
+        #             \s*,\s*                # 逗号分隔
+        #             (.*?)                  # ② query（捕获，非贪婪）
+        #             \s*\)?\s*$             # 可选右括号 + 尾部空白
+        #         """,
+        #         re.VERBOSE,
+        #     )
+        #     m = pattern.fullmatch(tool_cmd)
+        #     if m:
+        #         id_num   = int(m.group(1))   # → 0
+        #         query    = m.group(2)        # → "what is shown here?"
+            
+        #     # 2. 真正调用 crop，并返回结果
+        #     img = images[id_num]
+        #     data, message, off_set = scan(img, query)
+        #     return data, message, off_set, id_num
+
+        # except Exception as e:
+        #     usage = (
+        #         f"<scan>(Image_0, query)</scan>, "
+        #         "The first argument is a string, which record the image name with an ID, e.g. Image_0 "
+        #         "and the second argument is a string representing the element to scan in the image."
+        #     )
+        #     return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
+        
+    def call_extract(self, tool_cmd: str, images: List[Image.Image]) -> bytes:
         """
-        1. Convert Locate usage:
-        (Image_0, query) ->
-        locate(
+        1. Convert Extract usage:
+        (Image_0, x_pos, y_pos) ->
+        extract(
             image: Image.Image,
-            query: str
+            x_pos: Literal["left", "center", "right"],
+            y_pos: Literal["top", "center", "bottom"]
         )
-        2. Perform the locate operation on the specified image.
+        2. Perform the extract operation on the specified image.
         Args:
-            tool_cmd (str): The command string containing image name and query.
-            img (Image.Image): The image to search within.
+            tool_cmd (str): The command string containing image name, x_pos, and y_pos.
+            images (List[Image.Image]): List of images available for extraction.
         Returns:
             Tuple[bytes, str]:
-                cropped image as PNG bytes,
-                message -> As text describing the locate operation
+                extracted image as PNG bytes,
+                message -> As text describing the extract operation
                 offset -> For calculating the coordinates relative to the original image
         """
         try:
-            # 1. Extract image name and query from the tool command
+            # 1. Extract image name and positions from the tool command
             pattern = re.compile(
-                r"""\(?\s*                 # 可选左括号 + 空格
-                    [A-Za-z]+_(\d+)        # ① 数字 ID（捕获）  e.g. 0 / 123
-                    \s*,\s*                # 逗号分隔
-                    (.*?)                  # ② query（捕获，非贪婪）
-                    \s*\)?\s*$             # 可选右括号 + 尾部空白
+                r"""
+                \(?\s*
+                    ([A-Za-z0-9_-]+)          # ① image name  (e.g. Image)
+                    _(\d+)                    # ② id number   (e.g. 0)
+                    \s*,\s*
+                    ["']?(left|center|right)["']?   # ③ x_pos   (allow optional quotes)
+                    \s*,\s*
+                    ["']?(top|center|bottom)["']?   # ④ y_pos   (allow optional quotes)
+                    \s*\)?
                 """,
-                re.VERBOSE,
+                re.VERBOSE | re.IGNORECASE,
             )
             m = pattern.fullmatch(tool_cmd)
-            if m:
-                id_num   = int(m.group(1))   # → 0
-                query    = m.group(2)        # → "what is shown here?"
             
-            # 2. 真正调用 crop，并返回结果
+            if m:
+                image_name, id_num, x_pos, y_pos = m.groups()
+                id_num = int(id_num)
+            
             img = images[id_num]
-            data, message, off_set = locate(img, query)
+            data, message, off_set = extract(img, x_pos, y_pos)
             return data, message, off_set, id_num
 
         except Exception as e:
             usage = (
-                f"<locate>(Image_0, query)</locate>, "
+                f"<extract>(Image_0, x_pos, y_pos)</extract>, "
                 "The first argument is a string, which record the image name with an ID, e.g. Image_0 "
-                "and the second argument is a string representing the element to locate in the image."
+                "and the second and third arguments are strings representing the horizontal and vertical positions."
             )
             return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
-        
 
     def call_tool(self, category: str ,tool_cmd: str, images: List[Image.Image]) -> Any:
         """
@@ -269,22 +321,39 @@ class ToolEnv(MultiTurnEnv):
         """
         if category == "crop":
             return self.call_crop(tool_cmd, images)
-        elif category == "locate":
-            return self.call_locate(tool_cmd, images)
+        elif category == "scan":
+            return self.call_scan(tool_cmd, images)
+        elif category == "extract":
+            return self.call_extract(tool_cmd, images)
         else:
             return None, f"<|Tool_Error|>, Unsupported tool category: {category}", None, None
 
 
     def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , images_offset: List[tuple], **kwargs: Any) -> Dict[str, Any]:
         try:
+            # Find the target element from the first user message
+            phrase = "please help me to identify the coordinate of the following element:"
+            first_user_msg = next(msg for msg in messages if msg.get("role") == "user")
+            content_list = first_user_msg.get("content", [])
+            first_user_content_with_text = next(
+                (item for item in content_list if item.get("type") == "text"),
+                None
+            )
+            first_user_text = first_user_content_with_text.get("text", "") if first_user_content_with_text else ""
+            _, _, tail = first_user_text.partition(phrase)
+            element = tail.strip().split('\n')[0] if tail else "target element"
+            
+            # Determine which tool to call based on the last assistant message
             parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
-            # print(f"Parsed content: {parsed}")
             if hasattr(parsed, 'crop') and parsed.crop is not None:
                 category = 'crop'
                 tool_cmd = parsed.crop
-            elif hasattr(parsed, 'locate') and parsed.locate is not None:
-                category = 'locate'
-                tool_cmd = parsed.locate
+            elif hasattr(parsed, 'scan') and parsed.scan is not None:
+                category = 'scan'
+                tool_cmd = parsed.scan
+            elif hasattr(parsed, 'extract') and parsed.extract is not None:
+                category = 'extract'
+                tool_cmd = parsed.extract
             else: # No valid tool command found
                 tool_feedback = {
                     "role": "user",
@@ -309,7 +378,12 @@ class ToolEnv(MultiTurnEnv):
                 off_set = (x_off_set, y_off_set)
                 images_offset.append(off_set)
                 
-                info_message = f"[Image_{len(images)-1} is displayed above, offset: {off_set}]\n{info_message}"
+                info_message = (
+                    f"[Image_{len(images)-1} is displayed above, offset: {off_set}]\n{info_message}\n"
+                    f'Please describe Image_{len(images)-1} and check if the {element} is in this image. '
+                    "If not or you don't think you can provide the correct coordinate, please keep using tools to find the possible area where the element is located. "
+                    "If it is, and you think you can provide the correct coordinate, please provide the coordinate in the <answer>...</answer> tag."
+                )
                 multimodal_message = [
                         {
                             "type": "image_url",

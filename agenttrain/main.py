@@ -157,7 +157,7 @@ def main():
         bf16=True,
         max_grad_norm=0.1,
         num_iterations=2,
-        beta=0.002,
+        beta=0.01,
         max_prompt_length=1024,
         max_completion_length=8192,
         per_device_train_batch_size=6,
@@ -223,8 +223,8 @@ def main():
     
     # 7. 开始训练
     print("6. 开始训练...")
-    trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2.5-vl-7b-instruct/checkpoint-2800')
-    # trainer.train()
+    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2.5-vl-7b-instruct/checkpoint-2800')
+    trainer.train()
     
     print("训练完成！")
 

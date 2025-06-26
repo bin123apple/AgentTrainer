@@ -1,6 +1,6 @@
-from agenttrain.tools.visual_grouding import crop, locate
+from agenttrain.tools.visual_grouding import crop, extract
 
 __all__ = [
     "crop"
-    "locate"
+    "extract"
 ]
