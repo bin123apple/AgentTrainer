@@ -30,6 +30,16 @@ Assistant: <think>In this quadrant I can now see the “Submit” button—it’
 <answer>(Image_1, (30, 45))</answer>
 '''
 
+FIND_COLOR_TOOL_EXAMPLE = '''User: [Image_0 is displayed above] Could you identify the location of the “Close” button in this interface?
+
+Assistant: <think>Now I suspect the “Close” button is the red circle icon in this region. I will use `find_color` to locate the red element.</think>
+<find_color>(Image_2, (255, 0, 0))</find_color>
+
+User: [Image_1 is displayed above]  # (best color-matched region)
+
+Assistant: <think>The “Close” button is clearly visible in this region and located approximately at (45, 60).</think>  
+<answer>(Image_1, (45, 60))</answer>'''
+
 MERGE_TOOL_EXAMPLE = '''User: [Image_0 is displayed above] Could you identify the location of the “Close” button in this interface?
 
 Assistant: <think>I’d like to zoom in on the menu icon at the top-left corner to get a clearer view.</think>  

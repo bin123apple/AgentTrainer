@@ -6,7 +6,7 @@ import inspect
 from typing import List, Dict, Any, Callable, Union
 
 from datasets import Dataset
-from agenttrain.tools import crop, extract
+from agenttrain.tools import crop, extract, find_color
 from PIL import Image
 from agenttrain.trainers.grpo_env_trainer import RewardFunc
 from agenttrain.envs.multiturn_env import MultiTurnEnv
@@ -90,10 +90,10 @@ class ToolEnv(MultiTurnEnv):
                  eval_dataset: Dataset | None = None,
                  tools: List[Callable] = [],
                  few_shot: List[Dict[str, str]] = [],
-                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer", "scan", "extract")],
+                 llm_fields: List[str | tuple[str, str]] = [("crop", "answer", "find_color", "extract")],
                  env_fields: List[str | tuple[str, str]] = ["result"],
                  sampling_args={
-                     "stop": ["</crop>", "</answer>", "</extract>"],
+                     "stop": ["</crop>", "</answer>", "</extract>", "</find_color>"],
                      "include_stop_str_in_output": True
                  },
                  mask_env_response: bool = True,
@@ -309,6 +309,74 @@ class ToolEnv(MultiTurnEnv):
             )
             return None, f"<|Tool_Error|>, correct usage: {usage}", None, None
 
+    def call_color(
+        self,
+        tool_cmd: str,
+        images: List[Image.Image]
+    ):
+        """
+        1. Convert find_color usage:
+        (Image_0, (R, G, B)) ->
+        find_color(
+            img_input: Image.Image,
+            target_rgb: Tuple[int, int, int]
+        )
+        2. Perform the color-based window extraction on the specified image.
+
+        Args:
+            tool_cmd (str): The command string containing image name and RGB triple.
+                            e.g. "Image_2, (255, 0, 0)"
+            images (List[Image.Image]): List of PIL Image objects available.
+
+        Returns:
+            Tuple containing:
+                1. bytes | None:
+                PNG bytes of the extracted 200×200 window if successful; otherwise None.
+                2. str:
+                A message describing success (with ΔE/offset) or the error.
+                3. Tuple[int, int] | None:
+                (x_offset, y_offset) of the window’s top-left corner, or None on failure.
+                4. int | None:
+                The image index used (id_num), or None on failure.
+        """
+        print(f"call_color: tool_cmd={tool_cmd}")
+        try:
+            # parse "Image_<id>, (R, G, B)"
+            pattern = re.compile(r'''
+                ^\(\s*([A-Za-z0-9_-]+)_(\d+)\s*,\s*     # Image_0
+                \(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)\s*  # (123,123,12)
+                \)$
+            ''', re.VERBOSE)
+            m = pattern.match(tool_cmd)
+            if not m:
+                raise ValueError("Invalid syntax")
+
+            _, id_str, r_str, g_str, b_str = m.groups()
+            id_num = int(id_str)
+            target_rgb = (int(r_str), int(g_str), int(b_str))
+
+            # bounds check
+            if id_num < 0 or id_num >= len(images):
+                return None, f"<|Tool_Error|> Invalid image index: {id_num}", None, None
+            if not all(0 <= c <= 255 for c in target_rgb):
+                return None, f"<|Tool_Error|> RGB values must be in [0,255]: {target_rgb}", None, None
+
+            img = images[id_num]
+            # call the find_color tool
+            data, message, offset = find_color(img, target_rgb)
+            print(f"find_color: {message}, offset: {offset}")
+            return data, message, offset, id_num
+
+        except Exception as e:
+            print(f"Error in call_color: {e}")
+            usage = (
+                "Usage: <find_color>(Image_<id>, (R, G, B))</find_color>\n"
+                "  - <id>: integer index into the provided images list\n"
+                "  - R, G, B: integers in [0,255]\n"
+                "Example: <find_color>(Image_2, (255, 0, 0))</find_color>"
+            )
+            return None, f"<|Tool_Error|> {e}. {usage}", None, None
+
     def call_tool(self, category: str ,tool_cmd: str, images: List[Image.Image]) -> Any:
         """
         Call different tools
@@ -321,8 +389,8 @@ class ToolEnv(MultiTurnEnv):
         """
         if category == "crop":
             return self.call_crop(tool_cmd, images)
-        elif category == "scan":
-            return self.call_scan(tool_cmd, images)
+        elif category == "find_color":
+            return self.call_color(tool_cmd, images)
         elif category == "extract":
             return self.call_extract(tool_cmd, images)
         else:
@@ -348,9 +416,9 @@ class ToolEnv(MultiTurnEnv):
             if hasattr(parsed, 'crop') and parsed.crop is not None:
                 category = 'crop'
                 tool_cmd = parsed.crop
-            elif hasattr(parsed, 'scan') and parsed.scan is not None:
-                category = 'scan'
-                tool_cmd = parsed.scan
+            elif hasattr(parsed, 'find_color') and parsed.find_color is not None:
+                category = 'find_color'
+                tool_cmd = parsed.find_color
             elif hasattr(parsed, 'extract') and parsed.extract is not None:
                 category = 'extract'
                 tool_cmd = parsed.extract
@@ -378,11 +446,14 @@ class ToolEnv(MultiTurnEnv):
                 off_set = (x_off_set, y_off_set)
                 images_offset.append(off_set)
                 
+                # info_message = (
+                #     f"[Image_{len(images)-1} is displayed above, offset: {off_set}]\n{info_message}\n"
+                #     f'Please describe Image_{len(images)-1} and check if the {element} is in this image. '
+                #     "If not or you don't think you can provide the correct coordinate, please keep using tools to find the possible area where the element is located. "
+                #     "If it is, and you think you can provide the correct coordinate, please provide the coordinate in the <answer>...</answer> tag."
+                # )
                 info_message = (
                     f"[Image_{len(images)-1} is displayed above, offset: {off_set}]\n{info_message}\n"
-                    f'Please describe Image_{len(images)-1} and check if the {element} is in this image. '
-                    "If not or you don't think you can provide the correct coordinate, please keep using tools to find the possible area where the element is located. "
-                    "If it is, and you think you can provide the correct coordinate, please provide the coordinate in the <answer>...</answer> tag."
                 )
                 multimodal_message = [
                         {

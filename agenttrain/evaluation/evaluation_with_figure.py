@@ -21,12 +21,12 @@ from datasets import Dataset, load_from_disk
 from agenttrain.inference.vllm_client import VLLMClient
 from typing import List, Dict, Sequence, Any, Union, Tuple
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
-from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
+from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION, FIND_COLOR_TOOL_DESCRIPTION
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, FIND_COLOR_TOOL_EXAMPLE
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen-2.5b-vl-7b-vg-sft-2633-steps/checkpoint-2400", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-VL-7B-Instruct", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -54,24 +54,32 @@ def extract_coordinates(result: list[str]):
 
     # 如果有 <answer> 标签，就提取标签内的内容；否则就直接用 text
     answer_match = re.search(r'<answer>\s*(.*?)\s*</answer>', text, re.DOTALL)
-    if answer_match:
-        content = answer_match.group(1)
-    else:
-        content = text  
+    content = answer_match.group(1) if answer_match else text
 
-    # 按 (x, y) 形式提取
+    # 1) 先尝试匹配 Image_id + 坐标对
+    img_coord_match = re.search(
+        r'Image_(\d+)\s*,\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)',
+        content
+    )
+    if img_coord_match:
+        img_id = int(img_coord_match.group(1))
+        x = int(img_coord_match.group(2))
+        y = int(img_coord_match.group(3))
+        return img_id, x, y
+
+    # 2) 兼容只有 (x, y) 形式
     point_match = re.search(r'\(\s*(\d+)\s*,\s*(\d+)\s*\)', content)
     if point_match:
         x, y = map(int, point_match.groups())
-        return (x, y)
+        return None, x, y
 
-    # 如果是 (x1, y1, x2, y2) 形式，取中心点
+    # 3) 兼容 (x1, y1, x2, y2) 形式，取中心点
     box_match = re.search(r'\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)', content)
     if box_match:
         x1, y1, x2, y2 = map(int, box_match.groups())
-        return ((x1 + x2)//2, (y1 + y2)//2)
+        return None, (x1 + x2)//2, (y1 + y2)//2
 
-    return None
+    return None, None, None
 
 def load_processed_dataset(data_path: str) -> Dataset:
     """
@@ -104,10 +112,10 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     '''
     multimodal_inputs = []
     for prompt, image in zip(prompts, images):
-        initial_prompts = (
-            "Output only the coordinate of one point in your response. "
-            f"What element matches the following task: {prompt}"
-        )
+        initial_prompts = CROP_SYSTEM_PROMPT.format(
+        tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION+FIND_COLOR_TOOL_DESCRIPTION,
+        tool_example=CROP_TOOL_EXAMPLE+ EXTRACT_TOOL_EXAMPLE + FIND_COLOR_TOOL_EXAMPLE
+        ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")
@@ -134,11 +142,11 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     return multimodal_inputs
 
 def vg_reward_func(
-    parser,
+    parser: XMLParser,
     completions: List[Any],
     answer: List[Tuple[int, int, int, int]],
-    task: List[str],
-    **kwargs
+    all_images, 
+    all_images_offset,
 ) -> List[float | None]:
     """
     Reward function that checks if the predicted point lies within the ground-truth bounding box.
@@ -155,34 +163,48 @@ def vg_reward_func(
     """
     rewards: List[float | None] = []
     
-    for completion, box, t in zip(completions, answer, task):
+    for completion, box, images, images_offset in zip(completions, answer, all_images, all_images_offset):
         # parser ground-truth to tuple
-        if t == "vg":
-            # 1. 取出模型最后一句回答并清洗
-            raw = str(get_last_answer(parser, completion)).strip()
+        # 1. 取出模型最后一句回答并清洗
+        raw = str(get_last_answer(parser,completion)).strip()
+        raw = f'<answer>{raw}</answer>'
+        
+        try:
+            # 2. 用正则提取两个整数（支持负数）
+            pattern = re.compile(
+                r"""
+                    <answer>                # 起始标签
+                    \s*\(\s*
+                    Image_(\d+)             # ① id_num
+                    \s*,\s*
+                    \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)  # ②③ x, y
+                    \s*\)\s*
+                    </answer>               # 结束标签
+                """,
+                re.VERBOSE
+            )
+            m = pattern.search(raw)
+            if m:
+                id_num, x, y = m.groups()
+                id_num = int(id_num)
+                x, y   = int(x), int(y)
+                x = x + images_offset[id_num][0]
+                y = y + images_offset[id_num][1]
             
-            try:
-                # 2. 用正则提取两个整数（支持负数）
-                nums = re.findall(r"-?\d+", raw)
-                x, y = int(nums[0]), int(nums[1])
-                # print(f"Extracted coordinates: ({x}, {y}).")
-                
-                # 3. 拆箱 ground-truth
-                if isinstance(box, str):
-                    try:
-                        box = tuple(ast.literal_eval(box))
-                    except Exception:
-                        nums2 = re.findall(r"-?\d+", box)
-                        box = tuple(map(int, nums2))
-                x1, y1, x2, y2 = box
-                # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
-                
-                # 4. 判断并打分
-                reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
-            except Exception:
-                reward = 0.0
-        else:
-            reward = None
+            # 3. 拆箱 ground-truth
+            if isinstance(box, str):
+                try:
+                    box = tuple(ast.literal_eval(box))
+                except Exception:
+                    nums2 = re.findall(r"-?\d+", box)
+                    box = tuple(map(int, nums2))
+            x1, y1, x2, y2 = box
+            
+            # 4. 判断并打分
+            reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
+
+        except Exception:
+            reward = 0.0
         
         rewards.append(reward)
     
@@ -200,19 +222,23 @@ def get_last_answer(parser, trajectory: List[Dict[str, str]]) -> str | None:
     return None
 
 def parse_crop_bbox_from_text(text: str):
-    """
-    从形如 <crop>((x1,y1),(x2,y2))</crop> 的文本中提取坐标，
-    返回 (x1, y1, x2, y2) 四元组，找不到时返回 None。
-    """
-    # 匹配 <crop>( (x1,y1) , (x2,y2) )</crop>
-    pattern = re.compile(
-        r"<crop>\s*\(\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*,\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)\s*\)\s*</crop>"
+    m_img = re.search(
+        r"\[Image_(\d+)[^\]]*offset[:：]?\s*\(\s*(\d+),\s*(\d+)\s*\)",
+        text
     )
-    m = pattern.search(text)
-    if not m:
-        return None
-    x1, y1, x2, y2 = map(int, m.groups())
-    return x1, y1, x2, y2
+    if not m_img:
+        raise ValueError("Cannot parse Image ID and offset.")
+    dx, dy = int(m_img.group(2)), int(m_img.group(3))
+    
+    # 4. extract bounding box of the cropped region
+    m_size = re.search(r"Cropped a region of size\s*(\d+)×(\d+)", text)
+    if not m_size:
+        raise ValueError("Cannot parse crop size or coords.")
+    w, h = map(int, m_size.groups())
+    x1, y1, x2, y2 = 0, 0, w, h
+    real_tl = (x1 + dx, y1 + dy)
+    real_br = (x2 + dx, y2 + dy)
+    return (real_tl[0], real_tl[1], real_br[0], real_br[1]) if m_size else None
 
 class OSS_LLM:
     def __init__(self, args):
@@ -350,12 +376,15 @@ def main(multiturn_tools: bool = True):
             sampling_params=sampling_params,
         )
         completions = env_result["all_messages"]
-
+        all_images = env_result['images'] # calculate log_pb
+        all_images_offset = env_result["images_offset"]
+        
         rewards = vg_reward_func(
-            parser=parser,
-            completions=completions,
-            answer=answers,
-            task=["vg"] * len(batch),
+            parser = parser,
+            completions  = completions,
+            answer       = answers,
+            all_images  = all_images,
+            all_images_offset = all_images_offset
         )
 
         good_cnt = rewards.count(1)
@@ -370,6 +399,8 @@ def main(multiturn_tools: bool = True):
             for idx, reward in enumerate(rewards):
                 if predicate(reward):
                     msgs = env_result["all_messages"][idx]
+                    image_offset = env_result["images_offset"][idx]
+                    
                     sanitize_message = sanitize_dialogs([msgs])[0]
                     print(f'len(msgs): {len(msgs)}')
                     print(f"sanitize_message: {json.dumps(sanitize_message, indent=2, ensure_ascii=False)}")
@@ -385,7 +416,7 @@ def main(multiturn_tools: bool = True):
                     # 2) 提取所有 crop bbox
                     crop_bboxs = [
                         parse_crop_bbox_from_text(item["text"])
-                        for msg in msgs if msg.get("role") == "assistant"
+                        for msg in msgs if msg.get("role") == "user"
                         for item in msg.get("content", [])
                         if item.get("type") == "text"
                         if parse_crop_bbox_from_text(item["text"]) is not None
@@ -393,7 +424,9 @@ def main(multiturn_tools: bool = True):
 
                     # 3) 提取最终点击
                     raw = str(get_last_answer(parser, msgs)).strip()
-                    final_click = extract_coordinates([raw])
+                    img_id, x, y = extract_coordinates([raw])
+                    dx, dy  = image_offset[img_id]
+                    final_click = (x + dx, y + dy) if x is not None and y is not None else None
                     if isinstance(final_click, str):
                         try:
                             final_click = tuple(ast.literal_eval(final_click))

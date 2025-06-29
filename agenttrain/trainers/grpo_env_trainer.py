@@ -44,6 +44,17 @@ from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, SCAN_TOOL
 from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, SCAN_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, MERGE_TOOL_EXAMPLE
 from agenttrain.utils.data_utils import sanitize_dialogs, flatten_text_and_images
 
+TOOL_PROMPT = """[Image_0 is displayed below]
+You should use three tools to help you analyze the image and find the target coordinate:
+1. **crop**: This tool allows you to crop a specific area of the image by specifying the top-left and bottom-right coordinates of the rectangle you want to crop.
+2. **extract**: This tool allows you to extract one quarter of the image based on the specified horizontal and vertical positions (left, center, right for x-axis; top, center, bottom for y-axis).
+3. **find_color**: This tool allows you to find a specific color in the image by providing the RGB values of the target color.
+Example Usage:
+<crop>(Image_0, (10, 20), (110, 100))</crop> # Crop a rectangle from Image_0 from (10, 20) to (110, 100)
+<extract>(Image_0, left, top)</extract> # Extract the top-left quarter of Image_0
+<find_color>(Image_2, (255, 0, 0))</find_color> # Find the red color in Image_2
+Before each tool call, please enclose your reasoning within <think>...</think> tags.\n"""
+
 if is_wandb_available():
     import wandb
 
@@ -252,14 +263,11 @@ class GRPOEnvTrainer(GRPOTrainer):
         '''
         multimodal_inputs = []
         for prompt, image in zip(prompts, images):
-            initial_prompts = CROP_SYSTEM_PROMPT.format(
-            tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION,
-            tool_example=MERGE_TOOL_EXAMPLE
-            ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
-            # initial_prompts = (
-            #     "Output only the coordinate of one point in your response. "
-            #     f"What element matches the following task: {prompt}"
-            # )
+            # initial_prompts = CROP_SYSTEM_PROMPT.format(
+            # tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION,
+            # tool_example=MERGE_TOOL_EXAMPLE
+            # ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
+            initial_prompts = TOOL_PROMPT + f"please help me to identify the coordinate of the following element: \n{prompt}"
             if image is not None:
                 buffered = io.BytesIO()
                 image.save(buffered, format="PNG")
@@ -392,8 +400,9 @@ class GRPOEnvTrainer(GRPOTrainer):
                 key: [example[key] for example in inputs]
                 for key in keys
             }
-            if any(images is not None for images in all_images):
-                reward_kwargs["all_images"] = [example.get("all_images") for example in inputs]
+            # if any(images is not None for images in all_images):
+            #     reward_kwargs["all_images"] = [example.get("all_images") for example in inputs]
+            reward_kwargs["all_images"] = all_images
 
             # 调用 reward 函数
             out = reward_func(

@@ -260,3 +260,79 @@ def extract(
 
     message = f"Cropped a region of size {half_w}×{half_h}."
     return data, message, (x0, y0)
+
+
+import os, io, cv2, numpy as np
+from typing import Tuple, Optional, Union
+from PIL import Image
+
+# ΔE（CIE76）------------------------------------------------------------
+def _delta_e_cie76(lab1: np.ndarray, lab2: np.ndarray) -> float:
+    return float(np.linalg.norm(lab1.astype(np.float32) - lab2.astype(np.float32)))
+
+# 主函数 ---------------------------------------------------------------
+def find_color(
+    img_input : Union[str, Image.Image],
+    target_rgb: Tuple[int, int, int],
+) -> Tuple[Optional[bytes], str, Optional[Tuple[int, int]]]:
+    """
+    1. 用 10×10 小块在整张图上滑动（步长 10），找 ΔE 最小的小块；
+    2. 以该小块中心为圆心取 200×200 窗口（必要时向内平移使其完全落在图内）；
+    3. 返回窗口的 PNG 字节流、提示信息、窗口左上角 (x0, y0)。
+    """
+    # ---------- 读取图像 ---------- #
+    if isinstance(img_input, Image.Image):
+        # PIL → ndarray (BGR)
+        img_bgr = cv2.cvtColor(np.asarray(img_input), cv2.COLOR_RGB2BGR)
+    elif isinstance(img_input, str):
+        if not os.path.isfile(img_input):
+            return None, f"File not found: {img_input}", None
+        img_bgr = cv2.imread(img_input)
+        if img_bgr is None:
+            return None, f"Could not open image: {img_input}", None
+    else:
+        return None, "Invalid img_input: must be file path or PIL.Image.Image", None
+
+    h, w = img_bgr.shape[:2]
+
+    # ---------- 自适应窗口大小 ---------- #
+    ws = 200                          # 目标窗口
+    if min(h, w) < ws:                # 若图像最短边 < 200
+        ws = min(h, w)                #   用最短边替代
+    half = ws // 2                    # 半径 (= ws / 2)
+
+    # ---------- 颜色准备 ---------- #
+    tgt_lab = cv2.cvtColor(
+        np.uint8([[target_rgb[::-1]]]),   # BGR
+        cv2.COLOR_BGR2LAB
+    )[0, 0]
+
+    # ---------- 滑动 10×10 小块 ---------- #
+    best = {"delta_e": 1e9}
+    sp, stride = 10, 10
+    for y in range(0, h - sp + 1, stride):
+        for x in range(0, w - sp + 1, stride):
+            patch = img_bgr[y:y+sp, x:x+sp]
+            mean_lab = cv2.cvtColor(
+                patch.mean(axis=(0,1), dtype=np.float32).reshape(1,1,3).astype(np.uint8),
+                cv2.COLOR_BGR2LAB
+            )[0, 0]
+            de = _delta_e_cie76(mean_lab, tgt_lab)
+            if de < best["delta_e"]:
+                best.update({"delta_e": de, "center": (x + sp//2, y + sp//2)})
+
+    # ---------- 定位 200×200 窗口 ---------- #
+    cx, cy = best["center"]
+    ws, half = 200, 100
+    x0 = max(0, min(cx - half, w - ws))
+    y0 = max(0, min(cy - half, h - ws))
+    window = img_bgr[y0:y0+ws, x0:x0+ws]
+
+    # ---------- PNG 序列化 ---------- #
+    success, buf = cv2.imencode(".png", window)
+    if not success:
+        return None, "Failed to encode PNG.", None
+    data = buf.tobytes()
+
+    msg = f"Cropped a region of size {ws}×{ws} matching target RGB {target_rgb}."
+    return data, msg, (x0, y0)

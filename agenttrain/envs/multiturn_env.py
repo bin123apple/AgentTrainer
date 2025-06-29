@@ -118,7 +118,7 @@ class MultiTurnEnv(Environment):
 
                 i += n
         else:
-            llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=False) # type: ignore
+            llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=True) # type: ignore
         
         def update_state(j, llm_response):
             """

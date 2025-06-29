@@ -60,3 +60,35 @@ EXTRACT_TOOL_DESCRIPTION = '''extract(
                relative to the original image, or None if extraction failed.
     """
 '''
+
+FIND_COLOR_TOOL_DESCRIPTION = '''find_color(
+    img_input: Union[str, Image.Image],
+    target_rgb: Tuple[int, int, int]
+) -> Tuple[Optional[bytes], str, Optional[Tuple[int, int]]]:
+    """
+    Find the region in an image that best matches the target RGB color,
+    and return a 200×200 window centered around the best-matching area.
+
+    The function scans the image using small 10×10 patches to find the region
+    whose average color is closest to the given target color (in CIELAB ΔE sense).
+    It then extracts a 200×200 window centered at that location, adjusted to
+    stay within the image boundaries.
+
+    Args:
+        img_input (str | Image.Image):
+            The input image, either as a file path or a PIL Image object.
+        target_rgb (Tuple[int, int, int]):
+            The target color in (R, G, B) format to be matched in the image.
+
+    Returns:
+        Tuple containing:
+            1. bytes | None:
+               PNG-encoded image data of the 200×200 cropped window if successful;
+               otherwise, None.
+            2. str:
+               A message describing the result.
+            3. Tuple[int, int] | None:
+               The (x_offset, y_offset) of the top-left corner of the extracted
+               window relative to the original image, or None if extraction failed.
+    """
+'''

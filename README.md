@@ -5,7 +5,7 @@ Hope to incorporate the outputs produced by the agent’s tool invocations into 
 
 ## Collect data
 ```
-CUDA_VISIBLE_DEVICES=4,5 nohup python agenttrain/sft/add_think_steps.py > agenttrain_sft_data.log 2>&1 &
+CUDA_VISIBLE_DEVICES=4,5 nohup python agenttrain/sft/sft_data_generation.py > agenttrain_sft_data.log 2>&1 &
 ```
 
 ## SFT Train
@@ -62,7 +62,7 @@ Or
 
 ```
 CUDA_VISIBLE_DEVICES=4 nohup python -m agenttrain.inference.vllm_serve \
-  --model "Qwen/Qwen2.5-VL-7B-Instruct" \
+  --model "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft" \
   --tensor_parallel_size 1 \
   --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \

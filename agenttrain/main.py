@@ -132,7 +132,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "Qwen/Qwen2.5-VL-7B-Instruct"
+    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -223,7 +223,7 @@ def main():
     
     # 7. 开始训练
     print("6. 开始训练...")
-    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2.5-vl-7b-instruct/checkpoint-2800')
+    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2.5-vl-7b-instruct/checkpoint-1200')
     trainer.train()
     
     print("训练完成！")

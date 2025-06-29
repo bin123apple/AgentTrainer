@@ -107,12 +107,14 @@ class ToolRubric(Rubric):
             self.correct_answer_reward_func,
             self.correct_crop_func,
             self.correct_extract_func,
+            self.correct_find_color,
             self.tool_execution_reward_func,
             self.parser.get_format_reward_func(),
             self.parser.get_xml_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
             1.0,
+            0.7,
             0.7,
             0.7,
             0.4,
@@ -253,8 +255,10 @@ class ToolRubric(Rubric):
         return rewards
 
     def correct_crop_func(self, completions, answer, all_images, all_images_offset, **kwargs) -> List[float | None]:
+        debug: bool = kwargs.get("debug", False)
         rewards: List[float | None] = []
-        
+        if debug:
+            print(f'images_offset: {all_images_offset}')
         for completion, box, images, images_offset in zip(completions, answer, all_images, all_images_offset):
             # 1. extract the crop bbox from assistant messages
             crop_bboxs: List[Tuple[int,int,int,int]] = []
@@ -372,7 +376,8 @@ class ToolRubric(Rubric):
         # === 2. 主循环 ===
         # ------------------------------------------------------------------
         rewards: List[float] = []
-
+        if debug:
+            print(f'images_offset: {all_images_offset}')
         for completion, gt_box, images, offsets in zip(
             completions, answer, all_images, all_images_offset
         ):
@@ -380,7 +385,7 @@ class ToolRubric(Rubric):
                 # 2-1. 收集所有 <extract> 产生的 bbox
                 extract_bboxes: list[Tuple[int, int, int, int]] = []
 
-                for msg in completion:
+                for idx, msg in enumerate(completion):
                     if msg.get("role") != "assistant":
                         continue
                     for part in msg.get("content", []):
@@ -390,12 +395,41 @@ class ToolRubric(Rubric):
                         print(f"Parsed extract: img_id={img_id}, x_pos={x_pos}, y_pos={y_pos}")
                         if x_pos is None:        # 该片段无 <extract>
                             continue
-
+                        if debug:
+                                print(f"images: {images}")
                         w, h = images[img_id].size
                         bbox = _quadrant_bbox(w, h, x_pos, y_pos)   # 原图坐标
+                        if debug:
+                            print(f"Image_{img_id} size: ({w}, {h}), Extract bbox (pre-offset): {bbox}, offset: {offsets}")
                         dx, dy = offsets[img_id]                    # 全景图偏移
                         x1, y1, x2, y2 = bbox
                         extract_bboxes.append((x1 + dx, y1 + dy, x2 + dx, y2 + dy))
+                        
+                        if debug:
+                            # 打印计算出的真实 bbox
+                            print(f"[DEBUG] Extract real_bbox: {(x1 + dx, y1 + dy, x2 + dx, y2 + dy)}")
+
+                            # 从当前 idx 向后找第一条 user 消息
+                            for nxt in completion[idx+1:]:
+                                if nxt.get("role") == "user":
+                                    user_text = "\n".join(
+                                        c["text"] for c in nxt.get("content", []) if c.get("type")=="text"
+                                    )
+                                    print(f"[DEBUG] Corresponding user message:\n{user_text}")
+                                    m_img = re.search(
+                                        r"\[Image_(\d+)[^\]]*offset[:：]?\s*\(\s*(\d+),\s*(\d+)\s*\)",
+                                        user_text
+                                    )
+                                    dx_debug, dy_debug = int(m_img.group(2)), int(m_img.group(3))
+                                    m_size = re.search(r"Cropped a region of size\s*(\d+)×(\d+)", user_text)
+                                    w, h = map(int, m_size.groups())
+                                    x1_debug, y1_debug, x2_debug, y2_debug = 0, 0, w, h
+                                    if (x1_debug + dx_debug, y1_debug + dy_debug, x2_debug + dx_debug, y2_debug + dy_debug) != (x1 + dx, y1 + dy, x2 + dx, y2 + dy):
+                                        print(f"[ERROR] Offset mismatch: expected ({x1_debug + dx}, {y1_debug + dy}, {x2_debug + dx}, {y2_debug + dy}), got ({x1 + dx}, {y1 + dy}, {x2 + dx}, {y2 + dy})")
+                                    else:
+                                        print(f"[DEBUG] Offset matches: ({x1 + dx}, {y1 + dy}, {x2 + dx}, {y2 + dy}) == ({x1_debug + dx_debug}, {y1_debug + dy_debug}, {x2_debug + dx_debug}, {y2_debug + dy_debug})")
+                                    break
+                        
 
                 # 2-2. 解析 ground-truth
                 if isinstance(gt_box, str):
@@ -420,6 +454,104 @@ class ToolRubric(Rubric):
 
         return rewards
 
+    def correct_find_color(
+        self,
+        completions: List[List[dict]],
+        answer: List[Tuple[int, ...]],
+        all_images: List[List],
+        all_images_offset: List[List[Tuple[int, int]]],
+        **kwargs
+    ) -> List[float]:
+        """
+        Reward = 1 if ground-truth coordinate/box is inside the region returned by find_color.
+        """
+        debug: bool = kwargs.get("debug", False)
+        rewards: List[float] = []
+        
+        for completion, box, images, images_offset in zip(completions, answer, all_images, all_images_offset):
+            if debug:
+                print(f"[DEBUG] images_offset: {images_offset}")
+            reward = 0.0
+            
+            try:
+                # 1. locate the assistant message with a find_color tool call
+                for idx, msg in enumerate(completion):
+                    if msg.get("role") != "assistant":
+                        continue
+                    # check for closing tag
+                    if not any(item.get("type") == "text" and "</find_color>" in item["text"] 
+                            for item in msg.get("content", [])):
+                        continue
+                    
+                    # 2. find the following user message (tool output)
+                    user_msg = None
+                    for nxt in completion[idx+1:]:
+                        if nxt.get("role") == "user":
+                            user_msg = nxt
+                            break
+                    if user_msg is None:
+                        raise ValueError("No user message after find_color call.")
+                    
+                    # 3. extract image id and offset from user message text
+                    combined_text = "\n".join(
+                        c["text"] for c in user_msg.get("content", []) if c.get("type") == "text"
+                    )
+                    if debug:
+                        print(f"[DEBUG] Find find_color command, the User message text is: {combined_text}")
+                    m_img = re.search(
+                        r"\[Image_(\d+)[^\]]*offset[:：]?\s*\(\s*(\d+),\s*(\d+)\s*\)",
+                        combined_text
+                    )
+                    if not m_img:
+                        raise ValueError("Cannot parse Image ID and offset.")
+                    dx, dy = int(m_img.group(2)), int(m_img.group(3))
+                    if debug:
+                        img_id = int(m_img.group(1))
+                        offset_from_input = images_offset[img_id]
+                        if (dx, dy) != offset_from_input:
+                            print(f"[ERROR] Offset mismatch: expected {offset_from_input}, got ({dx}, {dy})")
+                        else:
+                            print(f"[DEBUG] Offset matches: ({dx}, {dy})")
+                    
+                    # 4. extract bounding box of the cropped region
+                    m_size = re.search(r"Cropped a region of size\s*(\d+)×(\d+)", combined_text)
+                    if not m_size:
+                        raise ValueError("Cannot parse crop size or coords.")
+                    w, h = map(int, m_size.groups())
+                    x1, y1, x2, y2 = 0, 0, w, h
+                    real_tl = (x1 + dx, y1 + dy)
+                    real_br = (x2 + dx, y2 + dy)
+                    
+                    # 6. normalize ground-truth
+                    if isinstance(box, str):
+                        try:
+                            box = tuple(ast.literal_eval(box))
+                        except Exception:
+                            box = tuple(map(int, re.findall(r"-?\d+", box)))
+                    
+                    # 7. check inclusion
+                    if len(box) == 2:
+                        x_gt, y_gt = box
+                        if real_tl[0] <= x_gt <= real_br[0] and real_tl[1] <= y_gt <= real_br[1]:
+                            reward = 1.0
+                    else:
+                        x1_gt, y1_gt, x2_gt, y2_gt = box
+                        if (real_tl[0] <= x1_gt <= real_br[0] and
+                            real_tl[1] <= y1_gt <= real_br[1] and
+                            real_tl[0] <= x2_gt <= real_br[0] and
+                            real_tl[1] <= y2_gt <= real_br[1]):
+                            reward = 1.0
+                    
+                    break  # done for this example
+                    
+            except Exception as e:
+                if debug:
+                    print(f"[ERROR] correct_find_color: {e}")
+                reward = 0.0
+            
+            rewards.append(reward)
+        
+        return rewards
     
     def tool_execution_reward_func(self, completions: List[List[Dict[str, str]]], **kwargs) -> List[float]:
         """

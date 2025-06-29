@@ -60,25 +60,6 @@ def parse_answer(ans_str):
     nums = re.findall(r"-?\\d+", ans_str)   # 退而求其次：正则抽数字
     return tuple(map(int, nums[:4]))
 
-def denorm_bbox_to_pixel(bbox, w, h):
-    x1, y1, x2, y2 = bbox          # 已经是 int
-    return (
-        round(x1 * w / 999),
-        round(y1 * h / 999),
-        round(x2 * w / 999),
-        round(y2 * h / 999),
-    )
-    
-def parse_answer(ans_str):
-    try:                                   # 先试 ast.literal_eval
-        res = ast.literal_eval(ans_str)
-        if isinstance(res, (list, tuple)):
-            return tuple(map(int, res[:4]))    # 只取前 4 个
-    except Exception:
-        pass
-    nums = re.findall(r"-?\\d+", ans_str)   # 退而求其次：正则抽数字
-    return tuple(map(int, nums[:4]))
-
 def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
     """
     优化版本：使用批处理来避免内存问题和提高效率
@@ -105,12 +86,6 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
                         batch_heights.append(int(examples["height"][i]))
                         batch_images.append(examples["image"][i])
                         batch_questions.append(cur.get("value", "").strip())
-                        w = int(examples["width"][i])
-                        h = int(examples["height"][i])
-                        norm_str = nxt.get("value", "").strip()
-                        norm_ans = parse_answer(norm_str)
-                        bbox_pixel = denorm_bbox_to_pixel(norm_ans, w, h)
-                        batch_answers.append(str(bbox_pixel))
                         w = int(examples["width"][i])
                         h = int(examples["height"][i])
                         norm_str = nxt.get("value", "").strip()
@@ -210,10 +185,10 @@ def preprocess_and_save_dataset(
 
 if __name__ == "__main__":
     # 配置参数
-    CACHE_DIR = "/home/uconn/.cache/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
+    CACHE_DIR = "/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
     start_sample = 0
     end_sample = 10000
-    OUTPUT_PATH = f"/home/uconn/BinLei/processed_datasets/uground_processed_{start_sample}_{end_sample}"
+    OUTPUT_PATH = f"/mnt/data1/processed_datasets/uground_processed_{start_sample}_{end_sample}"
     
     # 执行预处理
     processed_dataset = preprocess_and_save_dataset(
@@ -238,32 +213,6 @@ if __name__ == "__main__":
         for key, value in sample.items():
             if key != "image":
                 print(f"  {key}: {value}")
-
-        # 处理 image
-        img_data = sample["image"]  # raw bytes
-        img = Image.open(io.BytesIO(img_data)).convert("RGB")
-
-        # 解析 answer bbox（假设是 "(x1, y1, x2, y2)" 形式的字符串或直接 tuple）
-        raw_bbox = sample.get("answer")
-        if isinstance(raw_bbox, str):
-            try:
-                bbox = tuple(ast.literal_eval(raw_bbox))
-            except Exception:
-                # 回退到正则提取数字
-                import re
-                nums = re.findall(r"-?\d+", raw_bbox)
-                bbox = tuple(map(int, nums))
-        else:
-            bbox = raw_bbox
-
-        # 在图上画红框
-        draw = ImageDraw.Draw(img)
-        draw.rectangle(bbox, outline="red", width=3)
-
-        # 保存带框的图片
-        out_path = "sample_0_with_bbox.png"
-        img.save(out_path)
-        print(f"  image: saved with bbox → {out_path}")
 
         # 处理 image
         img_data = sample["image"]  # raw bytes

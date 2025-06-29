@@ -3,8 +3,8 @@ import io
 import ast
 import json
 import base64
-from PIL import Image
-from agenttrain.tools import crop
+from PIL import Image, ImageDraw
+from agenttrain.tools import crop, extract
 from pathlib import Path
 from agenttrain.envs.tool_env import ToolEnv
 from vllm import LLM, SamplingParams
@@ -13,8 +13,8 @@ from datasets import Dataset, load_from_disk
 from agenttrain.inference.vllm_client import VLLMClient
 from typing import List, Dict, Sequence, Any, Union, Tuple
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
-from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE
+from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION, FIND_COLOR_TOOL_DESCRIPTION
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, MERGE_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, FIND_COLOR_TOOL_EXAMPLE
 
 def encode_image(image_content):
     return base64.b64encode(image_content).decode('utf-8')
@@ -135,14 +135,10 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     '''
     multimodal_inputs = []
     for prompt, image in zip(prompts, images):
-        # initial_prompts = CROP_SYSTEM_PROMPT.format(
-        # tool_descriptions=CROP_TOOL_DESCRIPTION,
-        # tool_example=CROP_TOOL_EXAMPLE
-        # ) + f'\nNow please help me to identify the coordinate of the following element : \n{prompt}'
-        initial_prompts = (
-            "Output only the coordinate of one point in your response. "
-            f"What element matches the following task: {prompt}"
-        )
+        initial_prompts = CROP_SYSTEM_PROMPT.format(
+        tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION+FIND_COLOR_TOOL_DESCRIPTION,
+        tool_example=CROP_TOOL_EXAMPLE+ EXTRACT_TOOL_EXAMPLE + FIND_COLOR_TOOL_EXAMPLE
+        ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")
@@ -169,11 +165,11 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     return multimodal_inputs
 
 def vg_reward_func(
-    parser,
+    parser: XMLParser,
     completions: List[Any],
     answer: List[Tuple[int, int, int, int]],
-    task: List[str],
-    **kwargs
+    all_images, 
+    all_images_offset,
 ) -> List[float | None]:
     """
     Reward function that checks if the predicted point lies within the ground-truth bounding box.
@@ -190,34 +186,48 @@ def vg_reward_func(
     """
     rewards: List[float | None] = []
     
-    for completion, box, t in zip(completions, answer, task):
+    for completion, box, images, images_offset in zip(completions, answer, all_images, all_images_offset):
         # parser ground-truth to tuple
-        if t == "vg":
-            # 1. 取出模型最后一句回答并清洗
-            raw = str(get_last_answer(parser, completion)).strip()
+        # 1. 取出模型最后一句回答并清洗
+        raw = str(get_last_answer(parser,completion)).strip()
+        raw = f'<answer>{raw}</answer>'
+        
+        try:
+            # 2. 用正则提取两个整数（支持负数）
+            pattern = re.compile(
+                r"""
+                    <answer>                # 起始标签
+                    \s*\(\s*
+                    Image_(\d+)             # ① id_num
+                    \s*,\s*
+                    \(\s*([+-]?\d+)\s*,\s*([+-]?\d+)\s*\)  # ②③ x, y
+                    \s*\)\s*
+                    </answer>               # 结束标签
+                """,
+                re.VERBOSE
+            )
+            m = pattern.search(raw)
+            if m:
+                id_num, x, y = m.groups()
+                id_num = int(id_num)
+                x, y   = int(x), int(y)
+                x = x + images_offset[id_num][0]
+                y = y + images_offset[id_num][1]
             
-            try:
-                # 2. 用正则提取两个整数（支持负数）
-                nums = re.findall(r"-?\d+", raw)
-                x, y = int(nums[0]), int(nums[1])
-                # print(f"Extracted coordinates: ({x}, {y}).")
-                
-                # 3. 拆箱 ground-truth
-                if isinstance(box, str):
-                    try:
-                        box = tuple(ast.literal_eval(box))
-                    except Exception:
-                        nums2 = re.findall(r"-?\d+", box)
-                        box = tuple(map(int, nums2))
-                x1, y1, x2, y2 = box
-                # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
-                
-                # 4. 判断并打分
-                reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
-            except Exception:
-                reward = 0.0
-        else:
-            reward = None
+            # 3. 拆箱 ground-truth
+            if isinstance(box, str):
+                try:
+                    box = tuple(ast.literal_eval(box))
+                except Exception:
+                    nums2 = re.findall(r"-?\d+", box)
+                    box = tuple(map(int, nums2))
+            x1, y1, x2, y2 = box
+            
+            # 4. 判断并打分
+            reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
+
+        except Exception:
+            reward = 0.0
         
         rewards.append(reward)
     
@@ -234,34 +244,130 @@ def get_last_answer(parser, trajectory: List[Dict[str, str]]) -> str | None:
                 return parsed.answer
     return None
 
+import json, re, copy
+
+# ----------------------------------------------------------------------
+# 1) 预处理函数：去掉首条 user 的 <image_url>，删除中间 user 的冗余提示
+# ----------------------------------------------------------------------
+_PROMPT_RE = re.compile(
+    r"Please describe Image_\d+ and check if the .*?provide the coordinate in the <answer>...</answer> tag\.",
+    re.DOTALL
+)
+
+def clean_sample(sample: list) -> list:
+    out = copy.deepcopy(sample)
+    first_user_done = False
+
+    for msg in out:
+        if msg.get("role") != "user":
+            continue
+
+        # 只针对首条 user 额外处理
+        if not first_user_done:
+            text_keep = ""
+            image_item = None
+
+            # 从原 content 里提取出 initial_prompt 对应的 text + image_url
+            for item in msg.get("content", []):
+                if item.get("type") == "text" and not text_keep:
+                    text_keep = _extract_initial_prompt(item["text"])
+                if item.get("type") == "image_url" and image_item is None:
+                    image_item = item
+
+            # 构造新的 content：先放 text，再放 image_url（顺序可根据需要调整）
+            new_content = []
+            if text_keep:
+                new_content.append({"type": "text", "text": text_keep})
+            if image_item:
+                new_content.append(image_item)
+
+            msg["content"] = new_content
+            first_user_done = True
+            continue
+
+        # 其余 user 按之前逻辑处理……
+        new_content = []
+        for item in msg.get("content", []):
+            if item.get("type") != "text":
+                new_content.append(item)
+                continue
+            text = _PROMPT_RE.sub("", item["text"]).strip()
+            if text:
+                new_content.append({"type": "text", "text": text})
+        msg["content"] = new_content
+
+    return out
+
+
+# ----------------------------------------------------------------------
+# 2) 打印用：把所有 "image_url": {...} 替成 "<IMAGE>" 方便阅读
+# ----------------------------------------------------------------------
+def _mask_images(obj):
+    if isinstance(obj, dict):
+        if "image_url" in obj:
+            return "<IMAGE>"
+        return {k: _mask_images(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_mask_images(v) for v in obj]
+    return obj
+
+def _extract_initial_prompt(text: str) -> str:
+    """从长 prompt 中截出以 [Image_0 is displayed below] 开头的部分"""
+    start_tag = "[Image_0 is displayed below]"
+    idx = text.find(start_tag)
+    return text[idx:].strip() if idx != -1 else ""
+
 def main():
     
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000"
+        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_0_10000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
         print("请先运行 agenttrain/utils/data_collection_save.py 生成预处理数据")
         return  # 或者 raise e 来停止程序
-        
-        # 备用方案：如果预处理数据不存在，可以临时使用原始处理方式
-        # from your_preprocess_module import preprocess_dataset
-        # print("回退到原始预处理方式...")
-        # dataset = preprocess_dataset(
-        #     "osunlp/UGround-V1-Data", 
-        #     "train", 
-        #     n=10000,
-        #     cache_dir="/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
-        # )
     
     # 2. 随机打乱并按比例分割数据集
     print("2. 分割训练集和验证集...")
     split = dataset.shuffle(seed=0).train_test_split(test_size=0.01, seed=0)
     
-    train_dataset = split["train"]    # 90% 用于训练
+    train_dataset = split["train"]    # 99% 用于训练
     # print(f"Fist record in train dataset: {train_dataset[0]}")
-    eval_dataset = split["test"]      # 10% 用于评估
+    eval_dataset = split["test"]      # 1% 用于评估
     
+    # 随机打乱，取前 50 条（如果不足 50，则取全部）
+    debug_root = Path("debug")
+    debug_root.mkdir(parents=True, exist_ok=True)
+    subset = train_dataset.shuffle(seed=50).select(range(min(50, len(train_dataset))))
+
+    for idx, sample in enumerate(subset):
+        folder = debug_root / f"sample_{idx}"
+        folder.mkdir(parents=True, exist_ok=True)
+        # 1) 保存问题
+        q = sample.get("question", "")
+        (folder / "question.txt").write_text(q, encoding="utf-8")
+
+        # 2) 加载原始图像
+        img = Image.open(io.BytesIO(sample["image"])).convert("RGB")
+        draw = ImageDraw.Draw(img)
+
+        # 3) 解析 answer 中的 bbox
+        raw = sample.get("answer", "")
+        try:
+            # 尝试 Python 语法解析
+            bbox = tuple(ast.literal_eval(raw))
+        except Exception:
+            # 回退到正则提取所有数字
+            nums = re.findall(r"-?\\d+", str(raw))
+            bbox = tuple(map(int, nums))
+
+        # 4) 在图像上画红框
+        draw.rectangle(bbox, outline="red", width=3)
+
+        # 5) 保存带框的图像
+        img.save(folder / "image.png")
+
+    print(f"✅ 已将 {len(subset)} 个样本保存到 {debug_root}/ 下，每个子文件夹包含 question.txt 和 image.png。")
     print(f"训练集大小: {len(train_dataset)}")
     print(f"验证集大小: {len(eval_dataset)}")
     
@@ -276,26 +382,37 @@ def main():
         max_steps=5
     )
 
-    vllm_client = VLLMClient("0.0.0.0", 8888)
-    vllm_client.init_communicator()
+    # vllm_client = VLLMClient("0.0.0.0", 8888)
+    # vllm_client.init_communicator()
+    model = 'Qwen/Qwen2.5-VL-72B-Instruct'
+    vllm = LLM(
+        model=model,
+        tokenizer=model,
+        tensor_parallel_size=4,
+        gpu_memory_utilization=0.95,
+        enforce_eager=True,
+        max_model_len=10000,
+        disable_custom_all_reduce=True,
+        enable_prefix_caching=False,
+        trust_remote_code=True,
+    )
     sampling_params = SamplingParams(
         max_tokens=8192,
         temperature=1,
         top_k=-1,
         min_p=0.0 
     )
-    
     parser: XMLParser = XMLParser(fields=["reasoning", ("tool", "answer")])
-    
     out_dir   = Path("outputs")
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "good_completions.jsonl"
 
     # 如果想重新开始而不是在旧文件后追加，先清空：
     # jsonl_path.unlink(missing_ok=True)
-
+    
+    debug_printed = False
     batch_size = 128
-    for start in range(11520, len(train_dataset), batch_size):
+    for start in range(0, len(train_dataset), batch_size):
         end   = min(start + batch_size, len(train_dataset))
         batch = train_dataset.select(range(start, end))   # ← 改这行
 
@@ -306,27 +423,47 @@ def main():
         multimodal_inputs = _prepare_multimodal_chat_template(prompts, images)
         env_result  = tool_env.generate(
             prompts          = multimodal_inputs,
-            llm              = vllm_client,
+            llm              = vllm,
             sampling_params  = sampling_params,
         )
         completions = env_result["all_messages"]
-
+        all_images = env_result['images'] # calculate log_pb
+        all_images_offset = env_result["images_offset"]
+        
         rewards = vg_reward_func(
-            parser       = parser,
+            parser = parser,
             completions  = completions,
             answer       = answers,
-            task         = ["vg"] * len(batch),
+            all_images  = all_images,
+            all_images_offset = all_images_offset
         )
-
+        print(f"Rewards: {rewards}")
+        
         good_cnt = 0
-        with jsonl_path.open("a", encoding="utf-8") as f:          # ① 追加模式
+        # ----------------------------------------------------------------------
+        # 3) 主循环：reward==1.0 时清洗并写入；同时打印一条 debug
+        # ----------------------------------------------------------------------
+        with jsonl_path.open("a", encoding="utf-8") as f:       # ① 追加
             for idx, r in enumerate(rewards):
-                if r == 1:
-                    sample = completions[idx]
-                    # 若 sample 不是 JSON 可序列化的类型，先转成 str 或 dict
-                    json.dump(sample, f, ensure_ascii=False)
-                    f.write("\n")                                 # ② 每条一行
-                    good_cnt += 1
+                if r != 1.0:
+                    continue
+
+                raw_sample = completions[idx]
+                sample     = clean_sample(raw_sample)
+
+                # ---- DEBUG：首例前/后对比 -------------------------------------
+                if not debug_printed:
+                    print("=== RAW SAMPLE ===")
+                    print(json.dumps(_mask_images(raw_sample), ensure_ascii=False, indent=2))
+                    print("=== CLEANED SAMPLE ===")
+                    print(json.dumps(_mask_images(sample),   ensure_ascii=False, indent=2))
+                    debug_printed = True
+
+                # ---- 写入 jsonl ----------------------------------------------
+                json.dump(sample, f, ensure_ascii=False)
+                f.write("\n")
+                good_cnt += 1
+
 
         print(f"Batch {start//batch_size:4d}: kept {good_cnt}/{len(batch)}")
 
