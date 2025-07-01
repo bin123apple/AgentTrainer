@@ -113,14 +113,14 @@ class ToolRubric(Rubric):
             self.parser.get_xml_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
-            1.0,
+            0.0,
             0.7,
             0.7,
             0.7,
             0.4,
+            0.0,
             0.1,
-            0.1,
-        ]
+        ] # correct_answer_reward_func will times get_format_reward_func later
 
     def vg_reward_func(
         self,
@@ -392,7 +392,7 @@ class ToolRubric(Rubric):
                         if part.get("type") != "text":
                             continue
                         img_id, x_pos, y_pos = _parse_extract(part["text"])
-                        print(f"Parsed extract: img_id={img_id}, x_pos={x_pos}, y_pos={y_pos}")
+                        # print(f"Parsed extract: img_id={img_id}, x_pos={x_pos}, y_pos={y_pos}")
                         if x_pos is None:        # 该片段无 <extract>
                             continue
                         if debug:

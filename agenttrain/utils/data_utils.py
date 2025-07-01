@@ -32,7 +32,7 @@ def sanitize_dialogs(dialogs: List[List[dict]], placeholder: str = PLACEHOLDER):
                 for piece in content:
                     if piece.get("type") == "image_url":
                         # 单独存 placeholder，不覆盖真 URL
-                        piece["image_url_placeholder"] = placeholder
+                        piece["image_url"] = placeholder
     return safe
 
 # ❷ 单条 content → 文本 & 图片列表

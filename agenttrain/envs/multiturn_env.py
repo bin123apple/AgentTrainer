@@ -98,6 +98,7 @@ class MultiTurnEnv(Environment):
                 # 取 [i, i+chunk_size) 这一批（最后一批如果不足 chunk_size 也会取到末尾）
                 batch = messages_to_step[i : i + n]
                 # print(f"Sample message: {batch[0]}")
+                # print(f"max_tokens: {sampling_params.max_tokens}")
                 resp = llm.chat(
                     batch,
                     n=1,
@@ -130,8 +131,12 @@ class MultiTurnEnv(Environment):
             # sleep for 0-1 seconds to avoid rate limiting
             time.sleep(self.sleep_time * random.random())
             state = deepcopy(states[j])
-            # print(f'received response for index {j}: {llm_response.outputs[0].text}')
-            state["messages"].append({"role": "assistant", "content": [{'type': 'text', 'text': llm_response.outputs[0].text}]})
+            
+            # Avoid image padding in the response
+            # OtherWise there is some chance that the ERROR: 
+            # num_image_tokens = image_grid_thw[index].prod() // merge_length IndexError: will happen
+            clean_text = llm_response.outputs[0].text.replace('<|image_pad|>', '')
+            state["messages"].append({"role": "assistant", "content": [{'type': 'text', 'text': clean_text}]})
         
             # Finish or execute the tools
             current_id_length = len(llm_response.prompt_token_ids) + len(llm_response.outputs[0].token_ids)
@@ -139,7 +144,7 @@ class MultiTurnEnv(Environment):
             if self.is_completed(state["messages"]) or current_id_length > sampling_params.max_tokens - 1:
                 # print(f"Marking state {j} as completed")
                 state["completed"] = True
-                state['all_prompts'] = llm_response.prompt + llm_response.outputs[0].text + '<|im_end|>' # update all_prompts
+                state['all_prompts'] = llm_response.prompt + clean_text + '<|im_end|>' # update all_prompts
             else:
                 self.env_response(state["messages"], state["images"], state["images_offset"]) # call tools and add environment response
 

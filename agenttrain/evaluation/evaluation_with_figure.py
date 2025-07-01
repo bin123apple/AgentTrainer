@@ -227,7 +227,7 @@ def parse_crop_bbox_from_text(text: str):
         text
     )
     if not m_img:
-        raise ValueError("Cannot parse Image ID and offset.")
+        return None
     dx, dy = int(m_img.group(2)), int(m_img.group(3))
     
     # 4. extract bounding box of the cropped region
@@ -254,9 +254,9 @@ class OSS_LLM:
                 model=self.model,
                 tokenizer=self.model,
                 tensor_parallel_size=2,
-                gpu_memory_utilization=0.9,
+                gpu_memory_utilization=0.95,
                 enforce_eager=True,
-                max_model_len=19264,
+                max_model_len=30000,
                 disable_custom_all_reduce=True,
                 enable_prefix_caching=False,
                 trust_remote_code=True,
@@ -298,7 +298,7 @@ def save_case_analysis(batch_num, case_num, original_img, cropped_imgs, final_cl
 
     # 保存被裁剪的图
     for index, cropped_img in enumerate(cropped_imgs):
-        cropped_img.save(case_dir / "cropped.png")
+        cropped_img.save(case_dir / f"cropped_{index}.png")
 
     # 标记最终点击位置、crop bbox 和 ground truth bbox 的图
     marked_img = original_img.copy()
@@ -416,7 +416,7 @@ def main(multiturn_tools: bool = True):
                     # 2) 提取所有 crop bbox
                     crop_bboxs = [
                         parse_crop_bbox_from_text(item["text"])
-                        for msg in msgs if msg.get("role") == "user"
+                        for msg in msgs[1:] if msg.get("role") == "user"
                         for item in msg.get("content", [])
                         if item.get("type") == "text"
                         if parse_crop_bbox_from_text(item["text"]) is not None
@@ -425,8 +425,11 @@ def main(multiturn_tools: bool = True):
                     # 3) 提取最终点击
                     raw = str(get_last_answer(parser, msgs)).strip()
                     img_id, x, y = extract_coordinates([raw])
-                    dx, dy  = image_offset[img_id]
-                    final_click = (x + dx, y + dy) if x is not None and y is not None else None
+                    if img_id:
+                        dx, dy  = image_offset[img_id]
+                        final_click = (x + dx, y + dy) if x is not None and y is not None else None
+                    else:
+                        final_click = None
                     if isinstance(final_click, str):
                         try:
                             final_click = tuple(ast.literal_eval(final_click))

@@ -441,11 +441,24 @@ class GRPOEnvTrainer(GRPOTrainer):
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
+            
+        format_idx = self.reward_func_names.index("format_reward_func")
+        correct_idx = self.reward_func_names.index("correct_answer_reward_func")
 
+        # print(f"[Rewards per function] {rewards_per_func}")
+        format_reward = rewards_per_func[:, format_idx]
+        correctness_reward = rewards_per_func[:, correct_idx]
+        format_correctness_reward = format_reward * correctness_reward # format * correctness
+        mean_format_correctness_reward = torch.nanmean(format_correctness_reward).item()
+        self._metrics[mode][f"rewards/format_correctness_reward/mean"].append(mean_format_correctness_reward)
+        # print(f"[Format Correctness Reward] {format_correctness_reward}")
+        
         # 4. 应用权重并求和
         weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)
-        final_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
-
+        other_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
+        # print(f"[Other Rewards] {other_rewards}")
+        final_rewards = other_rewards + format_correctness_reward  # (world_batch_size,)
+        # print(f"[Final Rewards] {final_rewards}")
         # print(f"[Weights] {weights}")
         # print(f"[Final Rewards] {final_rewards}")
 
@@ -487,7 +500,9 @@ class GRPOEnvTrainer(GRPOTrainer):
         multimodal_inputs = self._prepare_multimodal_chat_template(prompts, images)
         
         # gather all prompts and images from all processes, env step
+        print(f"before gather_object, multimodal_inputs len: {len(multimodal_inputs)}")
         all_multimodal_inputs = gather_object(multimodal_inputs)
+        print(f"after gather_object, all_multimodal_inputs len: {len(all_multimodal_inputs)}")
         if self.accelerator.is_main_process:
             env_result = self.env.generate(
                 prompts=all_multimodal_inputs, 
