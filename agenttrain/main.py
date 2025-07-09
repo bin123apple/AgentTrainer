@@ -10,9 +10,11 @@ from pathlib import Path
 from utils import preprocess_dataset, get_model_and_tokenizer
 from envs.tool_env import ToolEnv
 from PIL import Image, ImageDraw
+from collections import defaultdict
 from trainers.grpo_env_trainer import GRPOEnvTrainer
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
-from transformers import AutoModelForCausalLM, Qwen2_5_VLForConditionalGeneration
+from transformers import AutoModelForCausalLM, Qwen2_5_VLForConditionalGeneration, TrainerCallback
+from deepspeed.runtime.zero.partition_parameters import GatheredParameters 
 """
 Multi-GPU training (single node, 4 training + 4 inference)
 
@@ -48,7 +50,62 @@ def get_vlm_module(model_name_or_path):
 
 class GRPOModelConfig(ModelConfig):
     freeze_vision_modules: bool = False
+    
+class RefModelRefreshCallback(TrainerCallback):
+    def __init__(self, refresh_fn, refresh_interval=1000):
+        self.refresh_fn = refresh_fn
+        self.refresh_interval = refresh_interval
 
+    def on_step_end(self, args, state, control, **kwargs):
+        # 这里触发点在 optimizer.step() 之后，梯度已清零，最安全
+        if state.global_step % self.refresh_interval == 0 and state.global_step > 0:
+            self.refresh_fn()
+
+class DebugGRPOCallback(TrainerCallback):
+    def __init__(self, topk: int = 5):
+        self.topk = topk
+        # 保存上一步参数均值，默认 0
+        self.last_means = defaultdict(float)
+
+    def on_pre_optimizer_step(self, args, state, control, model=None, **kwargs):
+        if not state.is_local_process_zero:
+            return  # 只在 rank 0 打印一次
+        print(f"\n>>> 🔔 on_pre_optimizer_step (step {state.global_step})")
+        for name, p in model.named_parameters():
+            # 聚合参数分片（同样也会把对应的 grad shard 收齐到 rank0）
+            with GatheredParameters([p], modifier_rank=0):
+                # 这里 p.grad 就是完整梯度了
+                full_grad = p.grad.clone().cpu() if p.grad is not None else None
+
+            if full_grad is None:
+                grad_norm = 0.0
+            else:
+                grad_norm = full_grad.norm().item()
+            if grad_norm > 0:
+                print(f"{name:60s} | grad_norm={grad_norm:.6e}")
+
+    def on_optimizer_step(self, args, state, control, model=None, optimizer=None, **kwargs):
+        # 参数刚更新，打印有更新的层
+        print(f"\n>>> 🔔 on_optimizer_step (step {state.global_step})")
+        updated = []
+        for name, p in list(model.named_parameters()):
+            # 对 DeepSpeed ZeRO-3 做聚合
+            with GatheredParameters([p], modifier_rank=0):
+                full_p = p.clone().cpu()
+            mean = full_p.mean().item()
+            delta = mean - self.last_means[name]
+            if delta != 0:
+                updated.append((name, mean, delta))
+            # 更新 last_means
+            self.last_means[name] = mean
+
+        if updated:
+            print("Updated layers:")
+            for name, mean, delta in updated:
+                print(f"{name:60s} | mean={mean:.12f} Δmean={delta:.12f}")
+        else:
+            print("No layers updated in this step.")
+            
 def main():
     """主函数"""
     torch._dynamo.config.disable = True
@@ -158,7 +215,7 @@ def main():
         bf16=True,
         max_grad_norm=0.1,
         num_iterations=2,
-        beta=0.01,
+        beta=0.1,
         max_prompt_length=1024,
         max_completion_length=4096,
         per_device_train_batch_size=6,
@@ -181,7 +238,9 @@ def main():
         log_on_each_node=False,
         log_completions=True,
         report_to="wandb", # wandb/none
-        reward_weights=tool_env.get_reward_weights()
+        reward_weights=tool_env.get_reward_weights(),
+        sync_ref_model = True,  # 是否同步参考模型
+        ref_model_sync_steps = 256,
     )
     # steps(梯度更新次数) = data_amount(总训练数据量)*num_iterations(相当于每组数据用几次)*num_generations(每个数据生成多少个回答)
     # / (gradient_accumulation_steps(积累几次梯度更新)*per_device_train_batch_size(每个GPU的batch大小)*num_gpus(使用的GPU数量))
@@ -218,14 +277,23 @@ def main():
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        vlm_module=vlm_module_cls(),
+        vlm_module=vlm_module_cls()
         # peft_config=get_peft_config(model_args), # For lora
     )
     
+    # Add callback
+    refresh_cb = RefModelRefreshCallback(
+        refresh_fn=trainer._refresh_reference_model,   # 现在 trainer 已经存在
+        refresh_interval=30
+    )
+    # debug_cb = DebugGRPOCallback(topk=5)
+    # trainer.add_callback(refresh_cb)
+    # trainer.add_callback(debug_cb)
+    
     # 7. 开始训练
     print("6. 开始训练...")
-    trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-2800')
-    # trainer.train()
+    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-2800')
+    trainer.train()
     
     print("训练完成！")
 

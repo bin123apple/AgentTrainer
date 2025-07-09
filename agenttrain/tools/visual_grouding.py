@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 from typing import Tuple, Any
 from PIL import Image
-import torch, open_clip, numpy as np, cv2
 from typing import List
 
 def crop(

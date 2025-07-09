@@ -54,3 +54,14 @@ User: [Image_2 is displayed above]  # (possible area returned)
 
 Assistant: <think>In this cropped image, I can see the approximate position of the “Close” button—it sits near the center of the region, slightly toward the lower-right. it’s at (45, 60).</think>  
 <answer>(Image_2, (45, 60))</answer>'''
+
+TOOL_PROMPT = """[Image_0 is displayed below]
+You should use three tools to help you analyze the image and find the target coordinate:
+1. **crop**: This tool allows you to crop a specific area of the image by specifying the top-left and bottom-right coordinates of the rectangle you want to crop.
+2. **extract**: This tool allows you to extract one quarter of the image based on the specified horizontal and vertical positions (left, center, right for x-axis; top, center, bottom for y-axis).
+3. **find_color**: This tool allows you to find a specific color in the image by providing the RGB values of the target color.
+Example Usage:
+<crop>(Image_0, (10, 20), (110, 100))</crop> # Crop a rectangle from Image_0 from (10, 20) to (110, 100)
+<extract>(Image_0, left, top)</extract> # Extract the top-left quarter of Image_0
+<find_color>(Image_2, (255, 0, 0))</find_color> # Find the red color in Image_2
+Before each tool call, please enclose your reasoning within <think>...</think> tags.\n"""

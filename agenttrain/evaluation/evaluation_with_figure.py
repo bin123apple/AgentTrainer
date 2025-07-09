@@ -22,11 +22,11 @@ from agenttrain.inference.vllm_client import VLLMClient
 from typing import List, Dict, Sequence, Any, Union, Tuple
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION, FIND_COLOR_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, FIND_COLOR_TOOL_EXAMPLE
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, FIND_COLOR_TOOL_EXAMPLE, TOOL_PROMPT
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="Qwen/Qwen2.5-VL-7B-Instruct", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-1200", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -112,10 +112,11 @@ def _prepare_multimodal_chat_template(prompts: List[str], images: List[Image.Ima
     '''
     multimodal_inputs = []
     for prompt, image in zip(prompts, images):
-        initial_prompts = CROP_SYSTEM_PROMPT.format(
-        tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION+FIND_COLOR_TOOL_DESCRIPTION,
-        tool_example=CROP_TOOL_EXAMPLE+ EXTRACT_TOOL_EXAMPLE + FIND_COLOR_TOOL_EXAMPLE
-        ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
+        # initial_prompts = CROP_SYSTEM_PROMPT.format(
+        # tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION+FIND_COLOR_TOOL_DESCRIPTION,
+        # tool_example=CROP_TOOL_EXAMPLE+ EXTRACT_TOOL_EXAMPLE + FIND_COLOR_TOOL_EXAMPLE
+        # ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
+        initial_prompts = TOOL_PROMPT + f"please help me to identify the coordinate of the following element: \n{prompt}"
         if image is not None:
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")
@@ -253,7 +254,7 @@ class OSS_LLM:
             self.oss_llm = LLM(
                 model=self.model,
                 tokenizer=self.model,
-                tensor_parallel_size=2,
+                tensor_parallel_size=4,
                 gpu_memory_utilization=0.95,
                 enforce_eager=True,
                 max_model_len=30000,

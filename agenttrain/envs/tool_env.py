@@ -426,7 +426,7 @@ class ToolEnv(MultiTurnEnv):
                 tool_feedback = {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "No valid tool command found in the last message."}
+                        {"type": "text", "text": "<|Format_Error|>: No valid tool command found in the last message."}
                     ]
                 }
                 messages.append(tool_feedback)

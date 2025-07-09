@@ -94,112 +94,196 @@ class XMLParser:
             return [count_xml(c) for c in completions]
 
         return xml_reward_func
+    
+    # def get_format_reward_func(self) -> Callable:
+    #     """
+    #     Return a reward function that checks if assistant messages follow the expected dense reward scheme with end-of-trajectory discount:
+    #     - +0.2 for <think>...</think> immediately followed by a tool call tag
+    #     - +0.3 for a tool call tag (<crop>, <find_color>, <extract>) immediately following </think>
+    #     - +0.5 if next user message exists and contains no <Tool_ERROR>
+    #     - +0.5 for <answer>(image_{id},(x,y))</answer> at the end
+    #     Apply a single discount gamma**N at the end, where gamma = exp(-1/2.5) and N is the number of assistant steps.
+    #     """
+    #     import math
+    #     import re
+
+    #     def format_reward_func(completions, **kwargs) -> List[float]:
+    #         gamma = math.exp(-1/2.5)
+
+    #         def check_format(trajectory):
+    #             raw_reward = 0.0
+    #             # collect assistant message positions
+    #             assistant_positions = [i for i, msg in enumerate(trajectory) if msg.get('role') == 'assistant']
+
+    #             for pos in assistant_positions:
+    #                 step_reward = 0.0
+    #                 content = trajectory[pos]['content'][0]['text']
+
+    #                 # 1. <think> and tool tag sequence with no intervening content
+    #                 think_start = content.find('<think>')
+    #                 think_end = content.find('</think>')
+    #                 tool_tags = ['crop', 'find_color', 'extract', 'answer']
+
+    #                 # locate valid tool tags
+    #                 tool_positions = []
+    #                 for tag in tool_tags:
+    #                     open_tag = f'<{tag}>'
+    #                     close_tag = f'</{tag}>'
+    #                     pos_open = content.find(open_tag)
+    #                     pos_close = content.find(close_tag)
+    #                     if pos_open != -1 and pos_close != -1 and pos_open < pos_close:
+    #                         tool_positions.append((pos_open, open_tag, close_tag))
+    #                 if think_end != -1 and tool_positions:
+    #                     first_tool = min(tool_positions, key=lambda x: x[0])
+    #                     tool_pos_open = first_tool[0]
+    #                     between = content[think_end + len('</think>'):tool_pos_open]
+    #                     if between.strip() == '':
+    #                         step_reward += 0.2  # think
+    #                         step_reward += 0.3  # tool call
+
+    #                 # 2. <answer>(image_{id},(x,y))</answer> at end
+    #                 stripped = content.strip()
+    #                 if stripped.startswith('<answer>') and stripped.endswith('</answer>'):
+    #                     if re.match(r'^<answer>\(image_\d+,\(\d+,\d+\)\)</answer>$', stripped):
+    #                         step_reward += 0.5
+
+    #                 # 3. Next user message exists without <|Tool_Error|>
+    #                 next_idx = pos + 1
+    #                 if next_idx < len(trajectory) and trajectory[next_idx].get('role') == 'user':
+    #                     user_content = trajectory[next_idx]['content'][0].get('text', '')
+    #                     if '<|Tool_Error|>' not in user_content:
+    #                         step_reward += 0.5
+
+    #                 raw_reward += step_reward
+    #                 print(f"Step {pos}: raw_reward={raw_reward}, step_reward={step_reward}")
+
+    #             # apply end-of-trajectory discount
+    #             N = len(assistant_positions)
+    #             total_reward = raw_reward * (gamma ** N)
+    #             return total_reward
+
+    #         return [check_format(traj) for traj in completions]
+
+    #     return format_reward_func
 
     def get_format_reward_func(self) -> Callable:
         """
-        Return a reward function that checks if messages follow the expected format.
-        
-        The function does not make assumptions about which fields should start/end the message
-        or the specific order of fields. It checks that:
-        - At least one field from the schema is present in each message
-        - Fields have proper content and spacing
-        """
-        def format_reward_func(completions, **kwargs) -> List[float]:
-            """Reward function that checks if each step follows the expected format."""
-            def check_format(trajectory):
-                # Get assistant messages
-                model_messages = [msg for msg in trajectory if msg['role'] == 'assistant']
-                if not model_messages:
-                    return 0.0
-                
-                # Calculate format adherence for each message
-                format_scores = []
-                for msg in model_messages:
-                    content = msg['content'][0]["text"]
-                    parsed = self.parse(content)
-                    parsed_no_strip = self.parse(content, strip=False)
-                    
-                    # Check if the message has at least one valid field
-                    has_any_field = False
-                    fields_with_content = 0
-                    total_fields = 0
-                    
-                    # Keep track of which expected fields are present
-                    expected_field_count = len(self._fields)  # Total number of expected field sets
-                    present_field_sets = set()  # Which field sets have at least one alternative present
-                    
-                    # Check proper spacing for fields
-                    has_correct_spacing = True
-                    
-                    for i, (canonical, alternatives) in enumerate(self._fields):
-                        field_set_present = False
-                        for alt in alternatives:
-                            if hasattr(parsed, alt) and getattr(parsed, alt) is not None:
-                                has_any_field = True
-                                fields_with_content += 1
-                                total_fields += 1
-                                field_set_present = True
-                                
-                                # Check if field exists in non-stripped version too (proper spacing)
-                                if not (hasattr(parsed_no_strip, alt) and 
-                                        getattr(parsed_no_strip, alt) is not None):
-                                    has_correct_spacing = False
-                            elif content.count(f"<{alt}>") > 0 or content.count(f"</{alt}>") > 0:
-                                # Tag exists but content wasn't properly parsed
-                                total_fields += 1
-                                field_set_present = True
-               
-                        # If any alternative from this field set was present, count it
-                        if field_set_present:
-                            present_field_sets.add(i)
-                            
-                    # <think> 位置 & 顺序检查 ——  Support more think              
-                    think_start = content.find("<think>")
-                    think_end   = content.find("</think>")
-                    # 获取 <answer> 或工具调用标签首次出现的位置
-                    other_tags = []
-                    for tag in self._fields[0]:
-                        other_tags.append(f"<{tag}>")
-                    other_pos   = min([p for t in other_tags if (p := content.find(t)) != -1] or [len(content)+1])
+        Return a reward function that applies a unified three-stage reward process to all assistant tags (tool calls and final answer), then applies end-of-trajectory discount:
 
-                    has_think_tag      = think_start != -1 and think_end != -1
-                    think_before_other = has_think_tag and think_end < other_pos
+        For each assistant message containing any of the tags (<think>, <crop>, <find_color>, <extract>, <answer>):
+
+        Stage 1 (format structure):
+        - Must contain <think>...</think> and one of the target tags (<crop>, <find_color>, <extract>, <answer>)
+        - The <think> tag must occur before any target tag
+        - No content allowed between </think> and the target tag's opening
+        - Reward: +0.2
+
+        Stage 2 (pattern match):
+        - The content of the target tag (tool or answer) must match its specific regex:
+            crop:   <crop>(Image_id, (x1, y1), (x2, y2))</crop>
+            extract:<extract>(Image_id, positionX, positionY)</extract>
+            find_color:<find_color>(Image_id, (r, g, b))</find_color>
+            answer: <answer>(image_id,(x,y))</answer>
+        - Reward: +0.3
+
+        Stage 3 (result correctness):
+        - For tool tags (crop, extract, find_color): the next user message must exist and contain no <Tool_ERROR>
+        - For answer tag: this assistant message must be the last assistant message in the trajectory
+        - Reward: +0.5
+
+        After summing raw rewards over assistant steps, multiply by gamma**N
+        (N = number of assistant steps), gamma = exp(-1/2.5).
+        """
+        import math
+        import re
+
+        # Precompile regex patterns for each tag
+        patterns = {
+            'crop': re.compile(r'^<crop>\(Image_\d+,\s*\(\s*\d+\s*,\s*\d+\s*\),\s*\(\s*\d+\s*,\s*\d+\s*\)\)</crop>$'),
+            'extract': re.compile(r'^<extract>\(Image_\d+,\s*"?(?:left|center|right)"?,\s*"?(?:top|center|bottom)"?\)</extract>$'),
+            'find_color': re.compile(r'^<find_color>\(Image_\d+,\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)\)</find_color>$'),
+            'answer': re.compile(r'^<answer>\(\s*Image_\d+\s*,\s*\(\s*\d+\s*,\s*\d+\s*\)\s*\)</answer>$')
+        }
+
+        def format_reward_func(completions, **kwargs) -> List[float]:
+            # gamma = math.exp(-1/2.5)
+            gamma = 0.75
+            def check_format(trajectory):
+                # print(f"Checking trajectory")
+                raw_reward = 0.0
+                assistant_positions = [i for i, msg in enumerate(trajectory) if msg.get('role') == 'assistant']
+
+                for idx, pos in enumerate(assistant_positions):
+                    content = trajectory[pos]['content'][0]['text'].strip()
+                    step_reward = 0.0
+
+                    # Must have a <think> tag
+                    think_start = content.find('<think>')
+                    think_end = content.find('</think>')
+                    if think_start == -1 or think_end == -1 or think_start > think_end:
+                        raw_reward += -0.3
+                        continue
                     
-                    # Calculate format score components
-                    format_score = 0.0
+                    # Penalty for overly long think & tool content: proportional to excess length
+                    if len(content) > 512:
+                        excess = len(content) - 512
+                        # proportional penalty: scale by ratio of excess to max_think_len
+                        penalty = min((excess / 512) * 0.3, 0.3)
+                        raw_reward -= penalty
                     
-                    # Check if any field from the last field set ends the message
-                    ends_with_any_field = False
-                    last_field_set = self._fields[-1][1]  # Get alternatives for last field set
-                    for alt in last_field_set:
-                        if content.strip().endswith(f"</{alt}>"):
-                            ends_with_any_field = True
-                            break
-                    
-                    # Weight the score based on different criteria
-                    if has_any_field:
-                        # Calculate the proportion of expected field sets that are present
-                        field_set_ratio = len(present_field_sets) / expected_field_count
-                        format_score += 0.25 * field_set_ratio
-                    
-                    if has_correct_spacing:
-                        format_score += 0.25
-                        
-                    if ends_with_any_field:
-                        format_score += 0.25
-                    
-                    if has_think_tag and think_before_other:
-                        format_score += 0.25
-                        
-                    format_scores.append(format_score)
-                
-                # Return average format adherence
-                if not format_scores:
-                    return 0.0
-                return (sum(format_scores) / len(format_scores))
-            
-            # Apply the format check to each completion trajectory
-            return [check_format(c) for c in completions]
+                    # Find earliest target tag start
+                    tag_positions = []
+                    for tag in patterns:
+                        p = content.find(f'<{tag}>')
+                        if p != -1:
+                            tag_positions.append(p)
+                    if not tag_positions:
+                        continue
+                    first_tag_pos = min(tag_positions)
+                    # Ensure <think> comes before any tag
+                    if first_tag_pos < think_start:
+                        continue
+
+                    # Check each tag for the three-stage process
+                    for tag, pat in patterns.items():
+                        open_tag = f'<{tag}>'
+                        close_tag = f'</{tag}>'
+                        start = content.find(open_tag)
+                        end = content.find(close_tag)
+                        # Must find a complete tag after the think_end
+                        if start != -1 and end != -1 and start > think_end:
+                            # Stage 1: no content between </think> and <tag>
+                            between = content[think_end + len('</think>'):start]
+                            if between.strip() != '':
+                                break  # fail stage 1
+                            step_reward += 0.2
+                            # Extract full tag substring
+                            full_tag = content[start:end + len(close_tag)]
+                            # Stage 2: pattern match
+                            if not pat.match(full_tag):
+                                break  # fail stage 2
+                            step_reward += 0.3
+                            # Stage 3: correctness
+                            if tag == 'answer':
+                                # Must be the last assistant message
+                                if pos == assistant_positions[-1]:
+                                    step_reward += 1
+                            else:
+                                next_idx = pos + 1
+                                if next_idx < len(trajectory) and trajectory[next_idx].get('role') == 'user':
+                                    user_text = trajectory[next_idx]['content'][0].get('text', '')
+                                    if '<|Format_Error|>' not in user_text:
+                                        step_reward += 0.5
+                            break  # only first applicable tag
+
+                    raw_reward += step_reward
+                    # print(f"Step {idx} (pos {pos}): raw_reward={raw_reward}, step_reward={step_reward}")
+                # Apply end-of-trajectory discount
+                N = len(assistant_positions)
+                return raw_reward * (gamma ** N)
+                # return raw_reward / N
+
+            return [check_format(traj) for traj in completions]
 
         return format_reward_func
 

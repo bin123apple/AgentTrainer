@@ -62,7 +62,7 @@ Or
 
 ```
 CUDA_VISIBLE_DEVICES=4 nohup python -m agenttrain.inference.vllm_serve \
-  --model "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-2800" \
+  --model "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft" \
   --tensor_parallel_size 1 \
   --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \

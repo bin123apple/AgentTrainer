@@ -2,6 +2,7 @@ import io
 import re
 import base64
 import warnings
+import itertools
 from PIL import Image
 from typing import Callable, Dict, Optional, Union, Any, List, Tuple
 import torch.nn.functional as F
@@ -33,7 +34,7 @@ from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 # monkey patch vllm client
 import trl.extras.vllm_client
 trl.extras.vllm_client.VLLMClient = VLLMClient
-
+from deepspeed.runtime.zero import GatheredParameters
 from trl import GRPOTrainer, GRPOConfig
 from trl.data_utils import maybe_apply_chat_template
 from trl.import_utils import is_rich_available
@@ -41,19 +42,8 @@ from trl.trainer.utils import pad
 from agenttrain.utils.torch_ope import nanmin, nanmax
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, SCAN_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION
-from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, SCAN_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, MERGE_TOOL_EXAMPLE
+from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, SCAN_TOOL_EXAMPLE, EXTRACT_TOOL_EXAMPLE, MERGE_TOOL_EXAMPLE, TOOL_PROMPT
 from agenttrain.utils.data_utils import sanitize_dialogs, flatten_text_and_images
-
-TOOL_PROMPT = """[Image_0 is displayed below]
-You should use three tools to help you analyze the image and find the target coordinate:
-1. **crop**: This tool allows you to crop a specific area of the image by specifying the top-left and bottom-right coordinates of the rectangle you want to crop.
-2. **extract**: This tool allows you to extract one quarter of the image based on the specified horizontal and vertical positions (left, center, right for x-axis; top, center, bottom for y-axis).
-3. **find_color**: This tool allows you to find a specific color in the image by providing the RGB values of the target color.
-Example Usage:
-<crop>(Image_0, (10, 20), (110, 100))</crop> # Crop a rectangle from Image_0 from (10, 20) to (110, 100)
-<extract>(Image_0, left, top)</extract> # Extract the top-left quarter of Image_0
-<find_color>(Image_2, (255, 0, 0))</find_color> # Find the red color in Image_2
-Before each tool call, please enclose your reasoning within <think>...</think> tags.\n"""
 
 if is_wandb_available():
     import wandb
@@ -200,6 +190,10 @@ class GRPOEnvTrainer(GRPOTrainer):
         if is_deepspeed_zero3_enabled():
             print("Deepspeed ZeRO-3 is enabled, skipping reference model creation.")
             self.ref_model = model_cls.from_pretrained(model_id, **model_init_kwargs)
+            
+            # debug
+            device_of_ref = next(self.ref_model.parameters()).device
+            print(f"[DEBUG] ref_model loaded on → {device_of_ref}")
         elif peft_config is None:
             print("peft_config is None, Creating reference model...")
             # If PEFT configuration is not provided, create a reference model based on the initial model.
@@ -253,8 +247,76 @@ class GRPOEnvTrainer(GRPOTrainer):
         self.reward_weights = reward_weights
         
         self._buffered_inputs = [None] * args.gradient_accumulation_steps
+        
+        # debug
+        self.debug = True
+        
+        # update reference model
+        self.refresh_interval = 4
         # print('self._buffered_inputs:', self._buffered_inputs)
         
+        # dynamic beta adjustment
+        self.target_kl = 0.01
+        # self.beta_min = 0.0001
+        self.beta_min = 0.01
+        self.beta_max = 0.01
+        self.kl_lr = 1e-3
+        self.ema_alpha = 0.99
+        self.ema_kl = self.target_kl
+
+    def _refresh_reference_model(self):
+        print("[refresh] copying weights → ref_model")
+
+        if is_deepspeed_zero3_enabled():
+            # 1) Rank-0 聚合 ZeRO-3 分片参数到 CPU
+            with GatheredParameters(list(self.model.parameters()), modifier_rank=0):
+                if self.accelerator.is_main_process:  # 仅在主进程构造 state_dict
+                    full_state = {
+                        k: v.clone().cpu() 
+                        for k, v in self.model.state_dict().items()
+                    }
+                else:
+                    full_state = None
+
+            # 2) Broadcast 给所有 rank（所有进程都传入同长度 list）
+            if dist.is_initialized():
+                obj_list = [full_state]
+                dist.broadcast_object_list(obj_list, src=0)
+                full_state = obj_list[0]
+
+            engine = self.ref_model
+            ref_mod = getattr(engine, "module", engine)
+
+            with GatheredParameters(list(ref_mod.parameters()), modifier_rank=0):
+                # now every rank is in the context; only rank0 has full tensors
+                ref_mod.load_state_dict(full_state, strict=True)
+                ref_mod.to(next(self.model.parameters()).device).eval()
+
+            #     # 准备一个 name→param 的字典，方便 lookup ref_model
+            #     ref_params = list(self.ref_model.named_parameters())
+            #     train_params = list(self.model.named_parameters())
+
+            # # 准备要对比的 train/ref params
+            # train_params = list(self.model.named_parameters())
+            # ref_params   = list(self.ref_model.named_parameters())
+
+            # print(f"\n[DEBUG step {self.state.global_step}] 刷新时，仅打印本步更新层均值：")
+            # for name, train_param in train_params:
+            #     # gather train
+            #     with GatheredParameters([train_param], modifier_rank=0):
+            #         tp = train_param.clone().cpu()
+            #     if self.accelerator.is_main_process:
+            #         train_mean = tp.mean().item()
+            #         print(f"  model {name:50s} | mean={train_mean:.12f}")
+
+            # for name, ref_param in ref_params:
+            #     # gather ref
+            #     with GatheredParameters([ref_param], modifier_rank=0):
+            #         rp = ref_param.clone().cpu()
+            #     if self.accelerator.is_main_process:
+            #         ref_mean = rp.mean().item()
+            #         print(f"  ref   {name:50s} | mean={ref_mean:.12f}")
+
     def _prepare_multimodal_chat_template(self, prompts: List[str], images: List[Image.Image]) -> List[dict]:
         '''
         Prepare the multimodal chat template for vLLM inference.
@@ -310,8 +372,15 @@ class GRPOEnvTrainer(GRPOTrainer):
                 padding=padding,
                 padding_side=padding_side,
                 add_special_tokens=add_special_tokens)
-        # print(f"Model inputs: {model_inputs}")
-        # print(f"Model inputs: {model_inputs}")
+        if self.debug:
+            ids  : torch.Tensor = model_inputs["input_ids"]         # (B, L)
+            mask : torch.Tensor = model_inputs["attention_mask"]    # (B, L)
+
+            for b in range(ids.size(0)):
+                pad_pos   = (mask[b] == 0).nonzero(as_tuple=True)[0]    # index 张量
+                pad_ids   = ids[b, pad_pos].tolist()                    # 对应 token-id
+
+                print(f"[Sample {b}] pad_pos={pad_pos.tolist()}  pad_ids={pad_ids}")
         return model_inputs
     
     def generate_logits_to_keep_batch(
@@ -367,7 +436,18 @@ class GRPOEnvTrainer(GRPOTrainer):
                 i += 1
 
             mask_batch.append(mask)
-        # print(f"Generated logits_to_keep mask: {mask_batch}, {len(mask_batch[0])}")
+        if self.debug:
+            print(f"Generated logits_to_keep mask: {mask_batch}, {len(mask_batch[0])}")
+            input_id_list = batch_input_ids.tolist()              \
+                            if isinstance(batch_input_ids, torch.Tensor) \
+                            else batch_input_ids
+
+            mask_list = mask_batch.tolist() if isinstance(mask_batch, torch.Tensor) else mask_batch
+
+            for b_idx, (seq, mask) in enumerate(zip(input_id_list, mask_list)):
+                keep_pos = [i for i, m in enumerate(mask) if m == 1]      # 位置索引
+                keep_ids = [seq[i] for i in keep_pos]                     # 对应 token-id
+                print(f"[sample {b_idx}] keep_pos={keep_pos}  keep_ids={keep_ids}")
         return mask_batch
 
     def compute_rewards(
@@ -409,8 +489,8 @@ class GRPOEnvTrainer(GRPOTrainer):
                 completions=completions,
                 **reward_kwargs
             )
-            # print(f"[{reward_func.__name__}] -> {out}")
-            # print(f"[{reward_func.__name__}] -> {out}")
+            if self.debug:
+                print(f"[{reward_func.__name__}] -> {out}")
 
             # None 转 NaN，并放到 device 上
             out = [r if r is not None else torch.nan for r in out]
@@ -441,23 +521,25 @@ class GRPOEnvTrainer(GRPOTrainer):
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
+            std_rewards = nanstd(rewards_per_func[:, i]).item()
+            self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
             
-        format_idx = self.reward_func_names.index("format_reward_func")
-        correct_idx = self.reward_func_names.index("correct_answer_reward_func")
+        # format_idx = self.reward_func_names.index("format_reward_func")
+        # correct_idx = self.reward_func_names.index("correct_answer_reward_func")
 
         # print(f"[Rewards per function] {rewards_per_func}")
-        format_reward = rewards_per_func[:, format_idx]
-        correctness_reward = rewards_per_func[:, correct_idx]
-        format_correctness_reward = format_reward * correctness_reward # format * correctness
-        mean_format_correctness_reward = torch.nanmean(format_correctness_reward).item()
-        self._metrics[mode][f"rewards/format_correctness_reward/mean"].append(mean_format_correctness_reward)
+        # format_reward = rewards_per_func[:, format_idx]
+        # correctness_reward = rewards_per_func[:, correct_idx]
+        # format_correctness_reward = format_reward * correctness_reward # format * correctness
+        # mean_format_correctness_reward = torch.nanmean(format_correctness_reward).item()
+        # self._metrics[mode][f"rewards/format_correctness_reward/mean"].append(mean_format_correctness_reward)
         # print(f"[Format Correctness Reward] {format_correctness_reward}")
         
         # 4. 应用权重并求和
         weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)
-        other_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
+        final_rewards = (rewards_per_func * weights).nansum(dim=1)          # (world_batch_size,)
         # print(f"[Other Rewards] {other_rewards}")
-        final_rewards = other_rewards + format_correctness_reward  # (world_batch_size,)
+        # final_rewards = other_rewards * format_reward  # (world_batch_size,)
         # print(f"[Final Rewards] {final_rewards}")
         # print(f"[Weights] {weights}")
         # print(f"[Final Rewards] {final_rewards}")
@@ -486,10 +568,22 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # prepare inference data
         prompts = [x["question"] for x in inputs]
-        # print(f"Prompts size: {len(prompts)}")
-        # print(f"Prompts size: {len(prompts)}")
+        
+        if self.debug:
+            print(f"Prompts size: {len(prompts)}")
+            print(f"Prompts: {prompts}")
         answers = [x["answer"] for x in inputs] if "answer" in inputs[0] else None
+        if self.debug:
+            print(f"Answers size: {len(answers)}")
+            print(f"Answers: {answers}")
         images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]
+        
+        # expand the prompts and images for multiple generations
+        expand_k = 2                                       # = self.num_generations
+        prompts = [p for p in prompts for _ in range(expand_k)]
+        images  = [img for img in images  for _ in range(expand_k)]
+        if answers is not None:
+            answers = [a for a in answers for _ in range(expand_k)]
         
         # upload the new model weights to vllm
         if self.state.global_step != self._last_loaded_step:
@@ -500,9 +594,9 @@ class GRPOEnvTrainer(GRPOTrainer):
         multimodal_inputs = self._prepare_multimodal_chat_template(prompts, images)
         
         # gather all prompts and images from all processes, env step
-        print(f"before gather_object, multimodal_inputs len: {len(multimodal_inputs)}")
+        # print(f"before gather_object, multimodal_inputs len: {len(multimodal_inputs)}")
         all_multimodal_inputs = gather_object(multimodal_inputs)
-        print(f"after gather_object, all_multimodal_inputs len: {len(all_multimodal_inputs)}")
+        # print(f"after gather_object, all_multimodal_inputs len: {len(all_multimodal_inputs)}")
         if self.accelerator.is_main_process:
             env_result = self.env.generate(
                 prompts=all_multimodal_inputs, 
@@ -555,6 +649,48 @@ class GRPOEnvTrainer(GRPOTrainer):
         all_messages = all_messages[process_slice]
         all_images_offset = all_images_offset[process_slice]
         
+        # reward fuction test and logic
+        inputs = [
+            {"task": "vg", "answer": ans, "all_images_offset": off}
+            for ans, off in zip(answers, all_images_offset)
+        ]
+        rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
+                                       all_images = all_images, 
+                                       completion_messages = all_messages, 
+                                       device = device)
+        # print(f"Rewards computed: {rewards}, shape: {rewards.shape}")
+        rewards = rewards[process_slice] 
+        # print(f"Rewards after slicing: {rewards}, shape: {rewards.shape}")
+        # Select the best 6 indices based on variance of rewards
+        def max_variance_subset_indices(rewards: torch.Tensor, k: int = 6):
+            """
+            从 rewards (length=24) 中找出方差最大的 k(=6) 个元素索引。
+            返回: best_indices  (list[int]),  best_var (float)
+            """
+            assert rewards.ndim == 1 and rewards.numel() >= k
+            rewards = rewards.float()
+
+            best_var = -float("inf")
+            best_indices = None
+
+            # 枚举所有 C(24,6) 组合
+            for combo in itertools.combinations(range(rewards.numel()), k):
+                var = rewards[list(combo)].var(unbiased=False).item()   # σ²
+                if var > best_var:
+                    best_var, best_indices = var, combo                  # 记录最优
+
+            return list(best_indices)
+        
+        sel_indices = max_variance_subset_indices(rewards, k=self.num_generations)
+
+        # send selected indices to all processes
+        rewards            = rewards[sel_indices]
+        # print(f"Rewards after selection: {rewards}, shape: {rewards.shape}")
+        all_prompts        = [all_prompts[i]        for i in sel_indices]
+        all_images         = [all_images[i]         for i in sel_indices]
+        all_messages       = [all_messages[i]       for i in sel_indices]
+        all_images_offset  = [all_images_offset[i]  for i in sel_indices]
+        
         # OK, now let's use processor to get the input_ids(Will be paded in processor)/attention_mask/pixel_values/image_grid_thw
         # convert prompts to correct format
         all_prompts_one_image_pad = []
@@ -563,13 +699,11 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_prompts_one_image_pad.append(prompt)
             
         # debug
-        # total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
-        # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
-        # print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
-        # total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
-        # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
-        # print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
-        
+        if self.debug:
+            total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
+            print(f"Total number of <|image_pad|> tokens in all prompts: {total_all_prompts_pads}")
+            total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
+            print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
         
         model_inputs = self.prepare_model_inputs(prompts_text = all_prompts_one_image_pad, 
                                                 images = all_images, return_tensors="pt", padding=True, 
@@ -579,10 +713,10 @@ class GRPOEnvTrainer(GRPOTrainer):
         input_ids = model_inputs["input_ids"]
         
         #debug
-        # mask = input_ids == 151655
-        # count = int(mask.sum().item())
-        # print(f"Token ID 151655 出现了 {count} 次")
-        # print(f"Token ID 151655 出现了 {count} 次")
+        if self.debug:
+            mask = input_ids == 151655
+            count = int(mask.sum().item())
+            print(f"Token ID 151655 出现了 {count} 次")
         
         attention_mask = model_inputs["attention_mask"]
         pixel_values = model_inputs["pixel_values"]
@@ -598,8 +732,6 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # Compute the old_per_token_logps & ref_per_token_logps
         with torch.no_grad():
-            # print(f'num_iterations: {self.num_iterations}')
-            # print(f'num_iterations: {self.num_iterations}')
             if self.num_iterations > 1:
                 old_per_token_logps,_ = self._get_per_token_logps(
                     self.model, 
@@ -609,8 +741,8 @@ class GRPOEnvTrainer(GRPOTrainer):
                     image_grid_thw = image_grid_thw,
                     logits_to_keep = logits_to_keep
                 )
-                # print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
-                # print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
+                if self.debug:
+                    print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
             else:
                 # print("No old_per_token_logps to compute, using None.")
                 # print("No old_per_token_logps to compute, using None.")
@@ -640,16 +772,6 @@ class GRPOEnvTrainer(GRPOTrainer):
                         logits_to_keep = logits_to_keep
                     )
         
-        # reward fuction test and logic
-        inputs = [
-            {"task": "vg", "answer": ans, "all_images_offset": off}
-            for ans, off in zip(answers, all_images_offset)
-        ]
-        rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
-                                       all_images = all_images, 
-                                       completion_messages = all_messages, 
-                                       device = device)
-        
         # print(f"rewards before gather: {rewards}, shape: {rewards.shape}")
         rewards = gather(rewards)
         # print(f"rewards after gather: {rewards}, shape: {rewards.shape}")
@@ -675,17 +797,16 @@ class GRPOEnvTrainer(GRPOTrainer):
         
         # Slice to keep only the local part of the data
         process_slice = slice(
-            self.accelerator.process_index * len(prompts),
-            (self.accelerator.process_index + 1) * len(prompts),
+            self.accelerator.process_index * len(all_prompts),
+            (self.accelerator.process_index + 1) * len(all_prompts),
         )
         advantages = advantages[process_slice]
-        # print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
+        print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
 
         # Log the metrics
         self._metrics[mode]["reward/mean"].append(mean_grouped_rewards.mean().item())
-        
-        # Log the metrics
-        self._metrics[mode]["reward/mean"].append(mean_grouped_rewards.mean().item())
+        # Log the std of reward (这里取各组 std 的平均)
+        self._metrics[mode]["reward/std"].append(std_grouped_rewards.mean().item())  
         
         return {
             "input_ids": input_ids,
@@ -827,8 +948,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         return result, logits_to_keep
 
     def compute_loss(self, model, inputs, num_items_in_batch=None):  
-        # print(">> buffered before:", self._buffered_inputs)
-        # print(">> buffered before:", self._buffered_inputs)
+        mode = "eval" if self.control.should_evaluate else "train"
         # Check if we need to generate new completions or use buffered ones
         if self.state.global_step % self.num_iterations == 0:
             inputs = self._generate_and_score_completions(inputs)
@@ -850,10 +970,10 @@ class GRPOEnvTrainer(GRPOTrainer):
             image_grid_thw = inputs.get("image_grid_thw"),
             logits_to_keep = inputs.get("logits_to_keep")
         )
-        # print(f"current per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
-        # print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
-        # print(f"current per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
-        # print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
+        
+        if self.debug:
+            print(f"current per_token_logps: {per_token_logps}, shape: {per_token_logps.shape}")
+            print(f"completion_mask: {completion_mask}, shape: {completion_mask.shape}")
 
         # Compute the KL divergence between the model and the reference model
         # https://arxiv.org/abs/2402.03300 Eq (4)
@@ -861,32 +981,51 @@ class GRPOEnvTrainer(GRPOTrainer):
             per_token_kl = (
                 torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
             )
+            
+            # adpative beta
             # print(f"per_token_kl: {per_token_kl}, shape: {per_token_kl.shape}")
-            # print(f"per_token_kl: {per_token_kl}, shape: {per_token_kl.shape}")
-        
+            # kl_div = ref_per_token_logps - per_token_logps 
+            # batch_kl = kl_div.mean()
+            # print(f"batch_kl: {batch_kl}, shape: {batch_kl.shape}")
+            # dist.all_reduce(batch_kl, op=dist.ReduceOp.SUM)
+
+            # # 平均到全局
+            # batch_kl = batch_kl/ dist.get_world_size()
+
+            # # 再算一次 mean
+            # global_batch_kl = batch_kl.mean().item()
+            # print(f"batch_kl: {batch_kl:.5f}")
+            # if global_batch_kl > self.target_kl * 1.5:
+            #     self.beta = min(self.beta * 2.0, self.beta_max)
+            # elif batch_kl < self.target_kl / 1.5:
+            #     self.beta = max(self.beta * 0.5, self.beta_min)
+                
+            # self._metrics[mode]["beta"].append(self.beta)
+            # print(f"[Adjusted beta] beta={self.beta}")
+            
         # Compute the loss
         # https://arxiv.org/abs/2402.03300 Eq (3)
         coef_1 = torch.exp(per_token_logps - old_per_token_logps)
-        # print(f"coef_1: {coef_1}, shape: {coef_1.shape}")
-        # print(f"coef_1: {coef_1}, shape: {coef_1.shape}")
+        if self.debug:
+            print(f"coef_1: {coef_1}, shape: {coef_1.shape}")
         coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
-        # print(f"coef_2: {coef_2}, shape: {coef_2.shape}")
-        # print(f"coef_2: {coef_2}, shape: {coef_2.shape}")
+        if self.debug:
+            print(f"coef_2: {coef_2}, shape: {coef_2.shape}")
+            print("self.epsilon_low:", self.epsilon_low)
+            print("self.epsilon_high:", self.epsilon_high)
         per_token_loss1 = coef_1 * advantages.unsqueeze(1)
-        # print(f"per_token_loss1: {per_token_loss1}, shape: {per_token_loss1.shape}")
-        # print(f"per_token_loss1: {per_token_loss1}, shape: {per_token_loss1.shape}")
+        if self.debug:
+            print(f"per_token_loss1: {per_token_loss1}, shape: {per_token_loss1.shape}")
         per_token_loss2 = coef_2 * advantages.unsqueeze(1)
-        # print(f"per_token_loss2: {per_token_loss2}, shape: {per_token_loss2.shape}")
-        # print(f"per_token_loss2: {per_token_loss2}, shape: {per_token_loss2.shape}")
+        if self.debug:
+            print(f"per_token_loss2: {per_token_loss2}, shape: {per_token_loss2.shape}")
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
-        # print(f"per_token_loss: {per_token_loss}, shape: {per_token_loss.shape}")
-        # print(f"per_token_loss: {per_token_loss}, shape: {per_token_loss.shape}")
+        if self.debug:
+            print(f"per_token_loss: {per_token_loss}, shape: {per_token_loss.shape}")
         if self.beta != 0.0:
             per_token_loss = per_token_loss + self.beta * per_token_kl
 
         if self.loss_type == "grpo":
-            # print("completion_mask shape and sum:", completion_mask.shape, completion_mask.sum(-1))
-            # print("completion_mask shape and sum:", completion_mask.shape, completion_mask.sum(-1))
             loss = ((per_token_loss * completion_mask).sum(-1) / completion_mask.sum(-1).clamp(min=1.0)).mean()
         elif self.loss_type == "bnpo":
             loss = (per_token_loss * completion_mask).sum() / completion_mask.sum().clamp(min=1.0)
@@ -894,7 +1033,6 @@ class GRPOEnvTrainer(GRPOTrainer):
             loss = (per_token_loss * completion_mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
-        
+        self.debug = False # Disable debug after the first batch  
+            
         return loss
-
-
