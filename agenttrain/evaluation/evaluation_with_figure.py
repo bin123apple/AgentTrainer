@@ -26,7 +26,7 @@ from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, EXTRACT_TOOL_EXAM
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-1200", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft_uitras_7B_8000_sft_ep0.1-0.2_beta_0.02_ref_none/checkpoint-1200", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):
@@ -358,7 +358,7 @@ def main(multiturn_tools: bool = True):
 
     parser = XMLParser(fields=["reasoning", ("tool", "answer")])
 
-    batch_size = 32
+    batch_size = 64
     total_correct = 0
     batch_correct_list = []
 

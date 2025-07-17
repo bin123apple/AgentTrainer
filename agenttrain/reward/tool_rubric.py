@@ -111,11 +111,11 @@ class ToolRubric(Rubric):
             self.parser.get_format_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
-            1.0,
-            1.0,
-            0.1,
-            0.9,
             0.3,
+            0.3,
+            0.03,
+            0.27,
+            0.1,
         ] # correct_answer_reward_func will times get_format_reward_func later
 
     def vg_reward_func(

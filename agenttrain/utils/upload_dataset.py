@@ -2,8 +2,9 @@ from huggingface_hub import upload_folder, HfApi
 from huggingface_hub.utils._http import HfHubHTTPError
 
 api = HfApi()
-repo_id = "Bin12345/Qwen-2.5B-VL-7B-VG-sft-8612-samples-400-checkpoint"
+repo_id = "Bin12345/5650-VG-SFT-dataset"
 
+# Or RUN: huggingface-cli repo create 5650-VG-SFT-dataset --type dataset
 try:
     api.create_repo(repo_id=repo_id, private=False)
 except HfHubHTTPError as e:
@@ -13,7 +14,8 @@ except HfHubHTTPError as e:
         raise
 
 upload_folder(
-    folder_path="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-400",
+    folder_path="/mnt/data1/home/lei00126/upload_to_hf",
     repo_id=repo_id,
-    commit_message="Upload trained model"
+    repo_type="dataset",
+    commit_message="Upload dataset"
 )

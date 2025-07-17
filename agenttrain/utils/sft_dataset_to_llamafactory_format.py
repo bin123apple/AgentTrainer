@@ -40,6 +40,8 @@ def transform_and_save(dataset, output_dir):
                     parts.append("<image>")
             
             message_text = "\n".join(parts)
+            if "[Image_0 is displayed below]" in message_text:
+                message_text = message_text.replace("[Image_0 is displayed below]", TOOL_PROMPT)
             messages.append({"role": role, "content": message_text})
         
         transformed.append({"messages": messages, "images": images})
@@ -55,30 +57,30 @@ if __name__ == "__main__":
     # 1. 读取原始 JSONL 数据
     import json, os
 
-    input_path = "/mnt/data1/home/lei00126/AgentTrainer/outputs/good_completions.jsonl"
+    input_path = "/mnt/data1/home/lei00126/upload_to_hf/good_completions.jsonl"
     dataset = []
     with open(input_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 dataset.append(json.loads(line))
 
-    # 2. 过滤：去掉任何包含 "<find_color>" 的元素
-    filtered_dataset = []
-    for elem in dataset:
-        # 检查每条消息中的每个 text 内容
-        has_find_color = False
-        for msg in elem:
-            for content in msg.get("content", []):
-                if content.get("type") == "text" and "<find_color>" in content["text"]:
-                    has_find_color = True
-                    break
-            if has_find_color:
-                break
-        if not has_find_color:
-            filtered_dataset.append(elem)
+    # # 2. 过滤：去掉任何包含 "<find_color>" 的元素
+    # filtered_dataset = []
+    # for elem in dataset:
+    #     # 检查每条消息中的每个 text 内容
+    #     has_find_color = False
+    #     for msg in elem:
+    #         for content in msg.get("content", []):
+    #             if content.get("type") == "text" and "<find_color>" in content["text"]:
+    #                 has_find_color = True
+    #                 break
+    #         if has_find_color:
+    #             break
+    #     if not has_find_color:
+    #         filtered_dataset.append(elem)
 
     output_dir = "/mnt/data1/home/lei00126/outputs/"
-    new_data = transform_and_save(filtered_dataset, output_dir)
+    new_data = transform_and_save(dataset, output_dir)
 
     # 4. 打印第一个元素以供检查
     from pprint import pprint

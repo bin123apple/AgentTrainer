@@ -320,7 +320,7 @@ def _extract_initial_prompt(text: str) -> str:
 def main():
     
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_0_10000"
+        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_20000_30000"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -411,8 +411,8 @@ def main():
     # jsonl_path.unlink(missing_ok=True)
     
     debug_printed = False
-    batch_size = 128
-    for start in range(0, len(train_dataset), batch_size):
+    batch_size = 64
+    for start in range(20000, len(train_dataset), batch_size):
         end   = min(start + batch_size, len(train_dataset))
         batch = train_dataset.select(range(start, end))   # ← 改这行
 

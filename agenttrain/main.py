@@ -190,7 +190,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl-7b/full/sft"
+    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b/full/sft"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -212,16 +212,18 @@ def main():
         num_train_epochs=1,
         temperature=1.0,
         # max_steps=1000000,
+        epsilon = 0.2,
+        epsilon_high= 0.28,
         bf16=True,
-        max_grad_norm=0.1,
+        max_grad_norm=0.01,
         num_iterations=2,
-        beta=0.1,
+        beta=0.02,
         max_prompt_length=1024,
         max_completion_length=4096,
         per_device_train_batch_size=6,
         per_device_eval_batch_size=6,
         num_generations=6,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=16,
         gradient_checkpointing=True,
         eval_strategy="steps",
         eval_steps=10000,
@@ -239,8 +241,8 @@ def main():
         log_completions=True,
         report_to="wandb", # wandb/none
         reward_weights=tool_env.get_reward_weights(),
-        sync_ref_model = True,  # 是否同步参考模型
-        ref_model_sync_steps = 256,
+        sync_ref_model = False,  # 是否同步参考模型
+        # ref_model_sync_steps = 20,
     )
     # steps(梯度更新次数) = data_amount(总训练数据量)*num_iterations(相当于每组数据用几次)*num_generations(每个数据生成多少个回答)
     # / (gradient_accumulation_steps(积累几次梯度更新)*per_device_train_batch_size(每个GPU的batch大小)*num_gpus(使用的GPU数量))
@@ -292,7 +294,7 @@ def main():
     
     # 7. 开始训练
     print("6. 开始训练...")
-    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-2800')
+    # trainer.train(resume_from_checkpoint = '/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft/checkpoint-6000')
     trainer.train()
     
     print("训练完成！")

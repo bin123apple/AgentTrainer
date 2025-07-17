@@ -133,8 +133,8 @@ def preprocess_dataset_uground(dataset: Dataset) -> Dataset:
 def preprocess_and_save_dataset(
     cache_dir: str,
     output_path: str,
-    n: Optional[int] = 20000, # 到 n 个样本为止，None 表示全量
-    m: Optional[int] = 10000,  # 从第 m 个样本开始采样
+    n: Optional[int] = 30000, # 到 n 个样本为止，None 表示全量
+    m: Optional[int] = 20000,  # 从第 m 个样本开始采样
     num_proc: int = 16
 ):
     """
@@ -154,12 +154,6 @@ def preprocess_and_save_dataset(
     print(f"   原始数据集大小: {len(ds)}")
     
     # 2. 采样
-    if n is not None and m is not None:
-        k = max(0, n - m)                   # 要保留的样本数
-        indices = range(m, m + k)           # 顺序子区间
-        # 或 random.sample(range(total), k) # 随机子集
-        ds = ds.select(indices)
-        print(f"   采样后数据集大小: {len(ds)}")   # == k
     if n is not None and m is not None:
         k = max(0, n - m)                   # 要保留的样本数
         indices = range(m, m + k)           # 顺序子区间
@@ -186,8 +180,8 @@ def preprocess_and_save_dataset(
 if __name__ == "__main__":
     # 配置参数
     CACHE_DIR = "/mnt/data1/huggingface/datasets/datasets--osunlp--UGround-V1-Data-Box"
-    start_sample = 0
-    end_sample = 10000
+    start_sample = 20000
+    end_sample = 30000
     OUTPUT_PATH = f"/mnt/data1/processed_datasets/uground_processed_{start_sample}_{end_sample}"
     
     # 执行预处理

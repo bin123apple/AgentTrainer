@@ -579,11 +579,11 @@ class GRPOEnvTrainer(GRPOTrainer):
         images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]
         
         # expand the prompts and images for multiple generations
-        expand_k = 2                                       # = self.num_generations
-        prompts = [p for p in prompts for _ in range(expand_k)]
-        images  = [img for img in images  for _ in range(expand_k)]
-        if answers is not None:
-            answers = [a for a in answers for _ in range(expand_k)]
+        # expand_k = 2                                       # = self.num_generations
+        # prompts = [p for p in prompts for _ in range(expand_k)]
+        # images  = [img for img in images  for _ in range(expand_k)]
+        # if answers is not None:
+        #     answers = [a for a in answers for _ in range(expand_k)]
         
         # upload the new model weights to vllm
         if self.state.global_step != self._last_loaded_step:
