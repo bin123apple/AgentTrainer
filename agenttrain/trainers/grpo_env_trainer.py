@@ -1,6 +1,7 @@
 import io
 import re
 import base64
+import datasets
 import warnings
 import itertools
 from PIL import Image
@@ -39,6 +40,9 @@ from trl import GRPOTrainer, GRPOConfig
 from trl.data_utils import maybe_apply_chat_template
 from trl.import_utils import is_rich_available
 from trl.trainer.utils import pad
+from torch.utils.data import DataLoader
+from transformers.utils import is_datasets_available
+from transformers.trainer_utils import seed_worker
 from agenttrain.utils.torch_ope import nanmin, nanmax
 from agenttrain.prompts.system_prompts import CROP_SYSTEM_PROMPT
 from agenttrain.prompts.tool_description import CROP_TOOL_DESCRIPTION, SCAN_TOOL_DESCRIPTION, EXTRACT_TOOL_DESCRIPTION
@@ -92,6 +96,40 @@ def split_tensor_dict(
         }
         for i in range(num_chunks)
     ]
+
+def unfold_accumulated_batch(accumulated_local_batch):
+    """
+    将形如
+        {"key1": [v1_0, v1_1, ...],
+         "key2": [v2_0, v2_1, ...], ...}
+    的累积批展开成
+        [{"key1": v1_0, "key2": v2_0, ...},
+         {"key1": v1_1, "key2": v2_1, ...}, ...]
+    
+    返回:
+        list(dict)  -- 长度 = m (micro‑batch 数)
+    """
+    # 1. 推断 micro‑batch 数 m
+    try:
+        first_key = next(iter(accumulated_local_batch))
+    except StopIteration:
+        raise ValueError("accumulated_local_batch 不能为空")
+    
+    m = len(accumulated_local_batch[first_key])
+
+    # 2. 校验所有字段长度一致
+    for k, v in accumulated_local_batch.items():
+        if len(v) != m:
+            raise ValueError(f"字段 {k} 的长度 {len(v)} 与其他字段不一致 ({m})")
+
+    # 3. 组装 list[dict]
+    unfolded = [
+        {k: accumulated_local_batch[k][i] for k in accumulated_local_batch}
+        for i in range(m)
+    ]
+
+    return unfolded
+
 
 class GRPOEnvTrainer(GRPOTrainer):
     def __init__(
@@ -354,7 +392,7 @@ class GRPOEnvTrainer(GRPOTrainer):
                     ]
             multimodal_inputs.append(initial_message)
         return multimodal_inputs
-    
+
     def prepare_model_inputs(self, prompts_text, images, return_tensors="pt", 
                          padding=True, padding_side="left", add_special_tokens=False):
         if len(images) > 0:
@@ -660,7 +698,7 @@ class GRPOEnvTrainer(GRPOTrainer):
                                        device = device)
         # print(f"Rewards computed: {rewards}, shape: {rewards.shape}")
         rewards = rewards[process_slice] 
-        # print(f"Rewards after slicing: {rewards}, shape: {rewards.shape}")
+        print(f"Rewards after slicing: {rewards}, shape: {rewards.shape}")
         # Select the best 6 indices based on variance of rewards
         def max_variance_subset_indices(rewards: torch.Tensor, k: int = 6):
             """
@@ -681,23 +719,34 @@ class GRPOEnvTrainer(GRPOTrainer):
 
             return list(best_indices)
         
-        sel_indices = max_variance_subset_indices(rewards, k=self.num_generations)
+        # sel_indices = max_variance_subset_indices(rewards, k=self.num_generations)
 
         # send selected indices to all processes
-        rewards            = rewards[sel_indices]
+        # rewards            = rewards[sel_indices]
         # print(f"Rewards after selection: {rewards}, shape: {rewards.shape}")
-        all_prompts        = [all_prompts[i]        for i in sel_indices]
-        all_images         = [all_images[i]         for i in sel_indices]
-        all_messages       = [all_messages[i]       for i in sel_indices]
-        all_images_offset  = [all_images_offset[i]  for i in sel_indices]
+        # all_prompts        = [all_prompts[i]        for i in sel_indices]
+        # all_images         = [all_images[i]         for i in sel_indices]
+        # all_messages       = [all_messages[i]       for i in sel_indices]
+        # all_images_offset  = [all_images_offset[i]  for i in sel_indices]
         
         # OK, now let's use processor to get the input_ids(Will be paded in processor)/attention_mask/pixel_values/image_grid_thw
         # convert prompts to correct format
+        n = self.args.gradient_accumulation_steps
+        m = rewards.size(0) // n    
+        
         all_prompts_one_image_pad = []
         for prompt in all_prompts:
             prompt = re.sub(r'(?:<\|image_pad\|>)+', '<|image_pad|>', prompt)
             all_prompts_one_image_pad.append(prompt)
+        if self.debug:
+            print(f"all_prompts_one_image_pad shape: {len(all_prompts_one_image_pad)}")
+            print(f'all_images shape: {len(all_images)}')
             
+        prompts_chunks = [all_prompts_one_image_pad[i : i + m]
+                        for i in range(0, len(all_prompts_one_image_pad), m)]
+        images_chunks = [all_images[i : i + m]
+                        for i in range(0, len(all_images), m)]
+        
         # debug
         if self.debug:
             total_all_prompts_pads = sum(prompt.count('<|image_pad|>') for prompt in all_prompts)
@@ -705,72 +754,88 @@ class GRPOEnvTrainer(GRPOTrainer):
             total_all_prompts_pads_one_image = sum(prompt.count('<|image_pad|>') for prompt in all_prompts_one_image_pad)
             print(f"Total number of <|image_pad|> tokens in all prompts (one image pad): {total_all_prompts_pads_one_image}")
         
-        model_inputs = self.prepare_model_inputs(prompts_text = all_prompts_one_image_pad, 
-                                                images = all_images, return_tensors="pt", padding=True, 
-                                                padding_side="left", add_special_tokens=False)
-        model_inputs = Trainer._prepare_inputs(self, model_inputs)
-
-        input_ids = model_inputs["input_ids"]
+        chunk_attention_mask = []
+        chunk_pixel_values = []
+        chunk_image_grid_thw = []
+        chunk_logits_to_keep = []
+        chunk_input_ids = []
         
-        #debug
-        if self.debug:
-            mask = input_ids == 151655
-            count = int(mask.sum().item())
-            print(f"Token ID 151655 出现了 {count} 次")
-        
-        attention_mask = model_inputs["attention_mask"]
-        pixel_values = model_inputs["pixel_values"]
-        image_grid_thw = model_inputs["image_grid_thw"]
-        # print(f"Input IDs shape: {input_ids.shape}, Attention mask shape: {attention_mask.shape}"
-              # f", Pixel values shape: {pixel_values.shape}, Image grid shape: {image_grid_thw.shape}")
+        for i in range(len(prompts_chunks)):
+            model_inputs = self.prepare_model_inputs(prompts_text = prompts_chunks[i], 
+                                                    images = images_chunks[i], return_tensors="pt", padding=True, 
+                                                    padding_side="left", add_special_tokens=False)
+            model_inputs = Trainer._prepare_inputs(self, model_inputs)
 
-        logits_to_keep = self.generate_logits_to_keep_batch(
-            input_ids, 
-            start_sequence=[151644, 77091, 198], #<|im_start|>assistant\n
-            end_sequence=[198, 151644, 872, 198] #\n<|im_start|>user\n
-        )
-        
-        # Compute the old_per_token_logps & ref_per_token_logps
-        with torch.no_grad():
-            if self.num_iterations > 1:
-                old_per_token_logps,_ = self._get_per_token_logps(
-                    self.model, 
-                    input_ids = input_ids,         # Tensor of shape (B, S)
-                    attention_mask = attention_mask,    # Tensor of shape (B, S)
-                    pixel_values = pixel_values,
-                    image_grid_thw = image_grid_thw,
-                    logits_to_keep = logits_to_keep
-                )
-                if self.debug:
-                    print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
-            else:
-                # print("No old_per_token_logps to compute, using None.")
-                # print("No old_per_token_logps to compute, using None.")
-                old_per_token_logps = None
+            input_ids = model_inputs["input_ids"]
+            
+            #debug
+            if self.debug:
+                mask = input_ids == 151655
+                count = int(mask.sum().item())
+                print(f"Token ID 151655 出现了 {count} 次")
+            
+            attention_mask = model_inputs["attention_mask"]
+            pixel_values = model_inputs["pixel_values"]
+            image_grid_thw = model_inputs["image_grid_thw"]
+            if self.debug:
+                print(f"Input IDs shape: {input_ids.shape}, Attention mask shape: {attention_mask.shape}"
+                    f", Pixel values shape: {pixel_values.shape}, Image grid shape: {image_grid_thw.shape}")
 
-            # （2）如果 beta>0 且给了一个 ref_model，需要对应计算参考模型 log‐probs
-            if self.beta == 0.0:
-                ref_per_token_logps = None
-            elif self.ref_model is not None:
-                ref_per_token_logps,_ =self._get_per_token_logps(
-                    self.ref_model, 
-                    input_ids = input_ids,         # Tensor of shape (B, S)
-                    attention_mask = attention_mask,    # Tensor of shape (B, S)
-                    pixel_values = pixel_values,
-                    image_grid_thw = image_grid_thw,
-                    logits_to_keep = logits_to_keep
-                )
-            else:
-                # 关闭 adapter 时当基线模型
-                with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps,_ = self._get_per_token_logps(
-                        self.model, 
-                        input_ids = input_ids,         # Tensor of shape (B, S)
-                        attention_mask = attention_mask,    # Tensor of shape (B, S)
-                        pixel_values = pixel_values,
-                        image_grid_thw = image_grid_thw,
-                        logits_to_keep = logits_to_keep
-                    )
+            logits_to_keep = self.generate_logits_to_keep_batch(
+                input_ids, 
+                start_sequence=[151644, 77091, 198], #<|im_start|>assistant\n
+                end_sequence=[198, 151644, 872, 198] #\n<|im_start|>user\n
+            )
+            print(f"logits_to_keep shape: {len(logits_to_keep)}")
+            
+            chunk_attention_mask.append(attention_mask)
+            chunk_pixel_values.append(pixel_values)
+            chunk_image_grid_thw.append(image_grid_thw)
+            chunk_logits_to_keep.append(logits_to_keep)
+            chunk_input_ids.append(input_ids)
+            
+        
+        # # Compute the old_per_token_logps & ref_per_token_logps
+        # with torch.no_grad():
+        #     if self.num_iterations > 1:
+        #         old_per_token_logps,_ = self._get_per_token_logps(
+        #             self.model, 
+        #             input_ids = input_ids,         # Tensor of shape (B, S)
+        #             attention_mask = attention_mask,    # Tensor of shape (B, S)
+        #             pixel_values = pixel_values,
+        #             image_grid_thw = image_grid_thw,
+        #             logits_to_keep = logits_to_keep
+        #         )
+        #         if self.debug:
+        #             print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
+        #     else:
+        #         # print("No old_per_token_logps to compute, using None.")
+        #         # print("No old_per_token_logps to compute, using None.")
+        #         old_per_token_logps = None
+
+        #     # （2）如果 beta>0 且给了一个 ref_model，需要对应计算参考模型 log‐probs
+        #     if self.beta == 0.0:
+        #         ref_per_token_logps = None
+        #     elif self.ref_model is not None:
+        #         ref_per_token_logps,_ =self._get_per_token_logps(
+        #             self.ref_model, 
+        #             input_ids = input_ids,         # Tensor of shape (B, S)
+        #             attention_mask = attention_mask,    # Tensor of shape (B, S)
+        #             pixel_values = pixel_values,
+        #             image_grid_thw = image_grid_thw,
+        #             logits_to_keep = logits_to_keep
+        #         )
+        #     else:
+        #         # 关闭 adapter 时当基线模型
+        #         with self.accelerator.unwrap_model(self.model).disable_adapter():
+        #             ref_per_token_logps,_ = self._get_per_token_logps(
+        #                 self.model, 
+        #                 input_ids = input_ids,         # Tensor of shape (B, S)
+        #                 attention_mask = attention_mask,    # Tensor of shape (B, S)
+        #                 pixel_values = pixel_values,
+        #                 image_grid_thw = image_grid_thw,
+        #                 logits_to_keep = logits_to_keep
+        #             )
         
         # print(f"rewards before gather: {rewards}, shape: {rewards.shape}")
         rewards = gather(rewards)
@@ -802,25 +867,62 @@ class GRPOEnvTrainer(GRPOTrainer):
         )
         advantages = advantages[process_slice]
         print(f"advantages after slice: {advantages}, shape: {advantages.shape}")
+        chunks_advantages = advantages.split(m, dim=0) # split
 
         # Log the metrics
         self._metrics[mode]["reward/mean"].append(mean_grouped_rewards.mean().item())
         # Log the std of reward (这里取各组 std 的平均)
         self._metrics[mode]["reward/std"].append(std_grouped_rewards.mean().item())  
         
+        # return {
+        #     "input_ids": input_ids,
+        #     "attention_mask": attention_mask, 
+        #     "pixel_values": pixel_values, 
+        #     "image_grid_thw": image_grid_thw,
+        #     "logits_to_keep": logits_to_keep, 
+        #     "advantages": advantages, 
+        #     "ref_per_token_logps": ref_per_token_logps,
+        #     "old_per_token_logps": old_per_token_logps,
+        # }    
         return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask, 
-            "pixel_values": pixel_values, 
-            "image_grid_thw": image_grid_thw,
-            "logits_to_keep": logits_to_keep, 
-            "advantages": advantages, 
-            "ref_per_token_logps": ref_per_token_logps,
-            "old_per_token_logps": old_per_token_logps,
-        }
+            "input_ids": chunk_input_ids,
+            "attention_mask": chunk_attention_mask, 
+            "pixel_values": chunk_pixel_values, 
+            "image_grid_thw": chunk_image_grid_thw,
+            "logits_to_keep": chunk_logits_to_keep, 
+            "advantages": chunks_advantages
+        }      
 
-    def _prepare_inputs(self, inputs):
-        # Simple pass-through, just like original
+    def _prepare_inputs(
+        self, accumulated_local_batch: dict[str, Union[torch.Tensor, Any]]
+    ) -> dict[str, Union[torch.Tensor, Any]]:
+        # Prepares inputs for model training/evaluation by managing completion generation and batch handling.
+        # During training:
+        #   - Receives the accumulated local batch (Per-GPU batch size × Gradient accumulation steps)
+        #     from the modified training dataloader instead of the standard local batch
+        #   - Generates completions once for the entire accumulated batch and splits it into smaller batches
+        #   - Buffers these completions and returns the appropriate slice for the current accumulation step
+        #   - Optimizes by regenerating completions only periodically (every gradient_accumulation_steps * num_iterations)
+        # During evaluation:
+        #   - The input is treated as a standard local batch (no accumulation, no multiple iterations)
+        #   - Completions are generated for each batch without buffering or reuse
+        # Returns a single local batch in both cases.
+
+        mode = "eval" if self.control.should_evaluate else "train"
+        if mode == "train":
+            generate_every = self.args.gradient_accumulation_steps * self.num_iterations
+            if self._step % generate_every == 0 or self._buffered_inputs is None:
+                # self._buffered_inputs=None can occur when resuming from a checkpoint
+                accumulated_local_batch = self._generate_and_score_completions(accumulated_local_batch)
+                # self._buffered_inputs = split_tensor_dict(
+                #     accumulated_local_batch, self.args.gradient_accumulation_steps
+                # )
+                self._buffered_inputs = unfold_accumulated_batch(accumulated_local_batch)
+            inputs = self._buffered_inputs[self._step % self.args.gradient_accumulation_steps]
+            self._step += 1
+        else:
+            # In evaluation, there is neither gradient accumulation, nor multiple iterations
+            inputs = self._generate_and_score_completions(accumulated_local_batch)
         return inputs
 
     def selective_log_softmax(self, logits, index):
@@ -949,17 +1051,60 @@ class GRPOEnvTrainer(GRPOTrainer):
 
     def compute_loss(self, model, inputs, num_items_in_batch=None):  
         mode = "eval" if self.control.should_evaluate else "train"
-        # Check if we need to generate new completions or use buffered ones
-        if self.state.global_step % self.num_iterations == 0:
-            inputs = self._generate_and_score_completions(inputs)
-            self._buffered_inputs[self._step % self.args.gradient_accumulation_steps] = inputs
-        else:
-            inputs = self._buffered_inputs[self._step % self.args.gradient_accumulation_steps]
-        self._step += 1
+        # # Check if we need to generate new completions or use buffered ones
+        # if self.state.global_step % self.num_iterations == 0:
+        #     inputs = self._generate_and_score_completions(inputs)
+        #     self._buffered_inputs[self._step % self.args.gradient_accumulation_steps] = inputs
+        # else:
+        #     inputs = self._buffered_inputs[self._step % self.args.gradient_accumulation_steps]
+        # self._step += 1
+        # Compute the old_per_token_logps & ref_per_token_logps
+        with torch.no_grad():
+            if self.num_iterations > 1:
+                old_per_token_logps,_ = self._get_per_token_logps(
+                    self.model, 
+                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                    pixel_values = inputs.get("pixel_values"),
+                    image_grid_thw = inputs.get("image_grid_thw"),
+                    logits_to_keep = inputs.get("logits_to_keep")
+                )
+                if self.debug:
+                    print(f"old_per_token_logps: {old_per_token_logps}, shape: {old_per_token_logps.shape}")
+            else:
+                # print("No old_per_token_logps to compute, using None.")
+                # print("No old_per_token_logps to compute, using None.")
+                old_per_token_logps = None
+
+            # （2）如果 beta>0 且给了一个 ref_model，需要对应计算参考模型 log‐probs
+            if self.beta == 0.0:
+                ref_per_token_logps = None
+            elif self.ref_model is not None:
+                ref_per_token_logps,_ =self._get_per_token_logps(
+                    self.ref_model, 
+                    input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                    attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                    pixel_values = inputs.get("pixel_values"),
+                    image_grid_thw = inputs.get("image_grid_thw"),
+                    logits_to_keep = inputs.get("logits_to_keep")
+                )
+            else:
+                # 关闭 adapter 时当基线模型
+                with self.accelerator.unwrap_model(self.model).disable_adapter():
+                    ref_per_token_logps,_ = self._get_per_token_logps(
+                        self.model, 
+                        input_ids = inputs.get("input_ids"),         # Tensor of shape (B, S)
+                        attention_mask = inputs.get("attention_mask"),    # Tensor of shape (B, S)
+                        pixel_values = inputs.get("pixel_values"),
+                        image_grid_thw = inputs.get("image_grid_thw"),
+                        logits_to_keep = inputs.get("logits_to_keep")
+                    )
         
         advantages = inputs["advantages"]  # (B, )
-        ref_per_token_logps = inputs["ref_per_token_logps"]  # (B, L_max)
-        old_per_token_logps = inputs["old_per_token_logps"]  # (B, L_max)
+        # ref_per_token_logps = inputs["ref_per_token_logps"]  # (B, L_max)
+        # old_per_token_logps = inputs["old_per_token_logps"]  # (B, L_max)
+        # per_token_logps = inputs["per_token_logps"]  # (B, L_max)
+        # completion_mask = inputs["completion_mask"]  # (B, L_max)
         
         # Compute the per-token log probabilities for the model
         per_token_logps,completion_mask = self._get_per_token_logps(
