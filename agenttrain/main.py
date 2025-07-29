@@ -4,6 +4,7 @@ import torch
 import io
 import re
 import ast
+import argparse
 from agenttrain.vlm_modules import *
 from tools import crop
 from pathlib import Path
@@ -25,6 +26,18 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python agenttrain/inference/vllm_serve.py --model '
 
 CUDA_VISIBLE_DEVICES=4,5,6,7 accelerate launch --config-file configs/zero3.yaml agenttrain/examples/math_train.py
 """
+def parse_args():
+    parser = argparse.ArgumentParser()
+    # 新增 vLLM 服务器地址参数
+    parser.add_argument(
+        '--vllm_server_host',
+        type=str,
+        default='0.0.0.0',
+        help='Host/IP of the vLLM inference server (多节点时填实际服务器地址)'
+    )
+
+    return parser.parse_args()
+
 def load_processed_dataset(data_path: str) -> Dataset:
     """
     加载预处理好的数据集
@@ -109,10 +122,10 @@ class DebugGRPOCallback(TrainerCallback):
 def main():
     """主函数"""
     torch._dynamo.config.disable = True
-    
+    args = parse_args()
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/processed_datasets/uground_processed_10000_20000"
+        PROCESSED_DATA_PATH = "/mnt/data1/home/lei00126/.cache/huggingface/hub/datasets--nuoxu1993--VG-RL-filter-dataset-hf/snapshots/5aadd29ae3bacbc378b1e5402458d683bea2f4a3"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -141,6 +154,8 @@ def main():
     debug_root = Path("debug")
     debug_root.mkdir(parents=True, exist_ok=True)
     subset = train_dataset.shuffle(seed=42).select(range(min(50, len(train_dataset))))
+    train_subset = train_dataset.select(range(10000, 100000))
+    train_dataset = train_subset
 
     for idx, sample in enumerate(subset):
         folder = debug_root / f"sample_{idx}"
@@ -150,7 +165,14 @@ def main():
         (folder / "question.txt").write_text(q, encoding="utf-8")
 
         # 2) 加载原始图像
-        img = Image.open(io.BytesIO(sample["image"])).convert("RGB")
+        raw_img = sample["image"]
+
+        if isinstance(raw_img, (bytes, bytearray)):      # 情况①：原始数据是字节流
+            img = Image.open(io.BytesIO(raw_img)).convert("RGB")
+        elif isinstance(raw_img, Image.Image):           # 情况②：已经是 PIL Image 对象
+            img = raw_img.convert("RGB")
+        else:                                            # 其他情况：例如路径字符串
+            img = Image.open(raw_img).convert("RGB")
         draw = ImageDraw.Draw(img)
 
         # 3) 解析 answer 中的 bbox
@@ -190,7 +212,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b/full/sft"
+    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch_rl"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -217,9 +239,10 @@ def main():
         bf16=True,
         max_grad_norm=0.01,
         num_iterations=2,
-        beta=0.02,
+        beta=0.00,
         max_prompt_length=1024,
         max_completion_length=4096,
+        # max_completion_length=19263,
         per_device_train_batch_size=6,
         per_device_eval_batch_size=6,
         num_generations=6,
@@ -230,10 +253,10 @@ def main():
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=400,
-        save_only_model=False,
+        save_steps=100,
+        save_only_model=True,
         use_vllm=True,
-        vllm_server_host="0.0.0.0",  # 多节点设置时替换为推理服务器的主机
+        vllm_server_host=args.vllm_server_host,  # 多节点设置时替换为推理服务器的主机
         vllm_server_port=8888,
         vllm_gpu_memory_utilization=0.9,
         logging_steps=1,

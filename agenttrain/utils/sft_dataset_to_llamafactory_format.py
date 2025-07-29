@@ -42,6 +42,10 @@ def transform_and_save(dataset, output_dir):
             message_text = "\n".join(parts)
             if "[Image_0 is displayed below]" in message_text:
                 message_text = message_text.replace("[Image_0 is displayed below]", TOOL_PROMPT)
+            if '<color>' in message_text:
+                message_text = message_text.replace('<color>', '<find_color>')
+            if '</color>' in message_text:
+                message_text = message_text.replace('</color>', '</find_color>')
             messages.append({"role": role, "content": message_text})
         
         transformed.append({"messages": messages, "images": images})
@@ -57,7 +61,7 @@ if __name__ == "__main__":
     # 1. 读取原始 JSONL 数据
     import json, os
 
-    input_path = "/mnt/data1/home/lei00126/upload_to_hf/good_completions.jsonl"
+    input_path = "/mnt/data1/home/lei00126/upload_to_hf/good_completions_10665_12984.jsonl"
     dataset = []
     with open(input_path, "r", encoding="utf-8") as f:
         for line in f:

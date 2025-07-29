@@ -26,7 +26,7 @@ from agenttrain.prompts.tool_example import CROP_TOOL_EXAMPLE, EXTRACT_TOOL_EXAM
     
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_sft_uitras_7B_8000_sft_ep0.1-0.2_beta_0.02_ref_none/checkpoint-1200", help="Path to the pretrained model")
+    parser.add_argument('--model_name', type=str, default="/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl_ui-tars-7b_2561_samples_1_epoch_rl/checkpoint-600", help="Path to the pretrained model")
     return parser.parse_args()
 
 def encode_image(image_content):

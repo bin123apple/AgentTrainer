@@ -562,6 +562,32 @@ class GRPOEnvTrainer(GRPOTrainer):
             std_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
             
+        if self.debug:
+            print(f'rewards_per_func: {rewards_per_func}')
+            
+        # 5. correct_case_mask：同时满足
+        #    (1) correct_answer_reward_func == 1
+        #    (2) format_reward_func        > 1.25
+        try:
+            correct_idx = self.reward_func_names.index("correct_answer_reward_func")
+            format_idx  = self.reward_func_names.index("format_reward_func")
+        except ValueError as e:
+            raise ValueError(
+                "reward_func_names 里缺少必要项："
+                f"{e}. 请确保同时包含 'correct_answer_reward_func' 和 'format_reward_func'。"
+            )
+
+        # 两个布尔条件
+        is_correct = rewards_per_func[:, correct_idx] == 1
+        has_good_format = rewards_per_func[:, format_idx] > 1.25
+
+        # 逻辑与：两者都满足才为 True
+        correct_case_mask = torch.logical_and(is_correct, has_good_format)
+
+        if self.debug:
+            print(f"correct_case_mask: {correct_case_mask}")
+            print(f"num selected: {correct_case_mask.sum().item()} / {correct_case_mask.numel()}")
+            
         # format_idx = self.reward_func_names.index("format_reward_func")
         # correct_idx = self.reward_func_names.index("correct_answer_reward_func")
 
@@ -582,7 +608,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         # print(f"[Weights] {weights}")
         # print(f"[Final Rewards] {final_rewards}")
 
-        return final_rewards
+        return final_rewards, correct_case_mask
 
     def _generate_and_score_completions(self, inputs: dict[str, Union[torch.Tensor, Any]]):
         '''
@@ -614,7 +640,17 @@ class GRPOEnvTrainer(GRPOTrainer):
         if self.debug:
             print(f"Answers size: {len(answers)}")
             print(f"Answers: {answers}")
-        images = [Image.open(io.BytesIO(x.get("image"))) for x in inputs]
+        def to_rgb(img_like) -> Image.Image:
+            """将 bytes / 路径字符串 / PIL Image 统一转换成 RGB PIL.Image"""
+            if isinstance(img_like, (bytes, bytearray)):        # 字节流
+                return Image.open(io.BytesIO(img_like)).convert("RGB")
+            elif isinstance(img_like, Image.Image):             # 已是 PIL Image
+                return img_like.convert("RGB")
+            else:                                               # 视为文件路径
+                return Image.open(img_like).convert("RGB")
+
+        # 生成 images 列表
+        images = [to_rgb(x.get("image")) for x in inputs]
         
         # expand the prompts and images for multiple generations
         # expand_k = 2                                       # = self.num_generations
@@ -692,12 +728,13 @@ class GRPOEnvTrainer(GRPOTrainer):
             {"task": "vg", "answer": ans, "all_images_offset": off}
             for ans, off in zip(answers, all_images_offset)
         ]
-        rewards = self.compute_rewards(questions = prompts, inputs = inputs, 
+        rewards, correct_case_mask  = self.compute_rewards(questions = prompts, inputs = inputs, 
                                        all_images = all_images, 
                                        completion_messages = all_messages, 
                                        device = device)
         # print(f"Rewards computed: {rewards}, shape: {rewards.shape}")
         rewards = rewards[process_slice] 
+        correct_case_mask = correct_case_mask[process_slice]
         print(f"Rewards after slicing: {rewards}, shape: {rewards.shape}")
         # Select the best 6 indices based on variance of rewards
         def max_variance_subset_indices(rewards: torch.Tensor, k: int = 6):
@@ -746,6 +783,8 @@ class GRPOEnvTrainer(GRPOTrainer):
                         for i in range(0, len(all_prompts_one_image_pad), m)]
         images_chunks = [all_images[i : i + m]
                         for i in range(0, len(all_images), m)]
+        chunk_correct_case_mask = [correct_case_mask[i : i + m]
+                                   for i in range(0, len(correct_case_mask), m)]
         
         # debug
         if self.debug:
@@ -890,7 +929,8 @@ class GRPOEnvTrainer(GRPOTrainer):
             "pixel_values": chunk_pixel_values, 
             "image_grid_thw": chunk_image_grid_thw,
             "logits_to_keep": chunk_logits_to_keep, 
-            "advantages": chunks_advantages
+            "advantages": chunks_advantages,
+            "chunk_correct_case_mask": chunk_correct_case_mask
         }      
 
     def _prepare_inputs(
@@ -1046,7 +1086,6 @@ class GRPOEnvTrainer(GRPOTrainer):
 
         result = torch.cat(all_logps, dim=0)  # (B, L_max_overall)
         # print(">>> all log-prob:", result)
-        # print(">>> all log-prob:", result)
         return result, logits_to_keep
 
     def compute_loss(self, model, inputs, num_items_in_batch=None):  
@@ -1178,6 +1217,33 @@ class GRPOEnvTrainer(GRPOTrainer):
             loss = (per_token_loss * completion_mask).sum() / (per_token_loss.size(0) * self.max_completion_length)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
+        
+        # ====================================================================
+        #               <<< 新增：正确样本的 SFT 交叉熵 >>> 
+        # ====================================================================
+        correct_mask = inputs.get("chunk_correct_case_mask", None)
+        if self.debug:
+            print(f'correct_mask:{correct_mask}')
+        if correct_mask is not None and correct_mask.any():
+            # 1) 只取正确样本
+            logps_correct      = per_token_logps[correct_mask]          # (B_c, L)
+            token_mask_correct = completion_mask[correct_mask]          # (B_c, L)
+
+            # 2) token‑level NLL = −log p
+            nll = -logps_correct                                        # (B_c, L)
+
+            # 3) 只在 completion 区域求平均交叉熵
+            sft_loss = (nll * token_mask_correct).sum() / token_mask_correct.sum().clamp(min=1.0)
+        else:
+            # 若本 batch 没有正确样本，SFT‑loss 置 0，不影响梯度
+            sft_loss = torch.tensor(0.0, device=loss.device)
+        if self.debug:
+            print(f'sft_loss:{sft_loss}')
+        
+        # 4) 融合：总 loss = RL + λ · SFT
+        lam = getattr(self, "lambda_sft", 1)      # 可写进 config
+        loss = loss + lam * sft_loss
+
         self.debug = False # Disable debug after the first batch  
             
         return loss

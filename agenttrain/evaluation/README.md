@@ -38,10 +38,63 @@ QWen-2.5-VL-7B + 5650 data sft (with-crop-tools) + rl 6000 steps 0.1beta :31.12%
 
 UI-TARS-7B + 5650 data sft (with-crop-tools) 3 epoch: 16.82%
 
-UI-TARS-7B + 5650 data sft (with-crop-tools) + 400 steps RL: 36.31%
-
 UI-TARS-7B + 5650 data sft (with-crop-tools) 6 epoch: 10.50%
 
-UI-TARS-7B + 8000 data sft (with-crop-tools) 3 epoch + rl 1200 steps + 0.02beta + ep0.1-0.2 + ref_none: 25.62%
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_1 + new_dataset: No results, 350步左右直接炸
 
-UI-TARS-7B + 8000 data sft (with-crop-tools) 3 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_none: 23.85%
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 2000 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_1 + new_dataset + sft_loss_0.1_alp: 
+稳定不炸, 32.89%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 400 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_4 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 40.04%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 200 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 45.98%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 400 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 44.72%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 600 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 37.07%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 400 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.01_alp (+format selection): 
+稳定不炸, 38.39%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 200 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.01_alp (+format selection): 
+稳定不炸, 37.95%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 800 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.01_alp (+format selection): 
+近900步时炸掉, 37.07%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 200 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.8_alp (+format selection): 
+稳定不炸, 43.64%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 500 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_0.8_alp (+format selection): 
+稳定不炸, 39.47%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 200 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_1_alp (+format selection): 
+稳定不炸, 47.88%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 200 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_16 + new_dataset + sft_loss_2_alp (+format selection): 
+稳定不炸, 43.01%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 100 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_32 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 36.50%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 100 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_32 + new_dataset + sft_loss_0.1_alp (+format selection): 
+稳定不炸, 39.09%
+
+UI-TARS-7B + 2319 data sft (with-crop-tools) 1 epoch + rl 100 steps + 0.00beta + ep0.2-0.28 + ref_sft + grad_4 + new_dataset + sft_loss_0.1_alp (+format selection) + cluster 12 nodes: 
+稳定不炸, 37.25%
+
+UI-TARS-7B + 5650 data sft (with-crop-tools) 3 epoch + rl 400 steps +  ???beta + ep??-?? + ref 20 + + grad_1 + old_dataset: 36.31%
+
+UI-TARS-7B + 8612 data sft (with-crop-tools) 3 epoch + rl 1200 steps + 0.02beta + ep0.1-0.2 + ref_sft + grad_1 + old_dataset: 25.62%
+
+UI-TARS-7B + 8612 data sft (with-crop-tools) 3 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_1 + old_dataset: 23.85%
+
+UI-TARS-7B + 8612 data sft (with-crop-tools) 3 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_4 + old_dataset:
+
+UI-TARS-7B + 8612 data sft (with-crop-tools) 3 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_16 + old_dataset: 29.73%
+
+UI-TARS-7B + 12984 data sft (with-crop-tools) 3 epoch + rl 400 steps + 0.02beta + ep0.2-0.28 + ref_sft + grad_16 + old_dataset:
