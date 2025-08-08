@@ -92,11 +92,13 @@ class MultiTurnEnv(Environment):
         if isinstance(llm, VLLMClient):
             llm_responses = []
             n = len(messages_to_step)
+            print(f"Number of messages to process: {n}")
             i = 0
 
             while i < n:
                 # 取 [i, i+chunk_size) 这一批（最后一批如果不足 chunk_size 也会取到末尾）
                 batch = messages_to_step[i : i + n]
+                # batch = messages_to_step[i : i + 1]
                 # print(f"Sample message: {batch[0]}")
                 # print(f"max_tokens: {sampling_params.max_tokens}")
                 resp = llm.chat(
@@ -118,6 +120,7 @@ class MultiTurnEnv(Environment):
                 llm_responses.extend(sub_resps)
 
                 i += n
+                # i += 1
         else:
             llm_responses = llm.chat(messages_to_step, sampling_params=sampling_params, use_tqdm=True) # type: ignore
         
@@ -208,6 +211,7 @@ class MultiTurnEnv(Environment):
         while not all_completed:
             states = self.step(states, llm, custom_sp)
             all_completed = all(state["completed"] for state in states)
+            # print(f"All completed: {all_completed}, Remaining: {sum(not s['completed'] for s in states)}")
             
         all_prompts = [s["all_prompts"] for s in states]
         all_images = [s["images"] for s in states] # list[list[Image.Image]] 

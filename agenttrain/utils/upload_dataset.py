@@ -2,7 +2,7 @@ from huggingface_hub import upload_folder, HfApi
 from huggingface_hub.utils._http import HfHubHTTPError
 
 api = HfApi()
-repo_id = "Bin12345/5650-VG-SFT-dataset"
+repo_id = "Bin12345/screenspot_pro_arrow_format"
 
 # Or RUN: huggingface-cli repo create 5650-VG-SFT-dataset --type dataset
 try:
@@ -14,7 +14,7 @@ except HfHubHTTPError as e:
         raise
 
 upload_folder(
-    folder_path="/mnt/data1/home/lei00126/upload_to_hf",
+    folder_path="/mnt/data1/home/lei00126/datasets/screenspot_arrow",
     repo_id=repo_id,
     repo_type="dataset",
     commit_message="Upload dataset"

@@ -707,7 +707,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_images = [None] * len(all_multimodal_inputs)
             all_messages = [None] * len(all_multimodal_inputs)
             all_images_offset = [None] * len(all_multimodal_inputs)
-            
+
         all_prompts = broadcast_object_list(all_prompts, from_process=0)
         all_images = broadcast_object_list(all_images, from_process=0)
         all_messages = broadcast_object_list(all_messages, from_process=0)
@@ -722,7 +722,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         all_images = all_images[process_slice]
         all_messages = all_messages[process_slice]
         all_images_offset = all_images_offset[process_slice]
-        
+
         # reward fuction test and logic
         inputs = [
             {"task": "vg", "answer": ans, "all_images_offset": off}
@@ -1193,6 +1193,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         if self.debug:
             print(f"coef_1: {coef_1}, shape: {coef_1.shape}")
         coef_2 = torch.clamp(coef_1, 1 - self.epsilon_low, 1 + self.epsilon_high)
+        # coef_2 = coef_1 # Try No clipping
         if self.debug:
             print(f"coef_2: {coef_2}, shape: {coef_2.shape}")
             print("self.epsilon_low:", self.epsilon_low)

@@ -183,6 +183,7 @@ class VLLMClient:
         skip_special_tokens: bool = True,
         spaces_between_special_tokens: bool = True,
     ) -> Dict[str, Union[List[Any], str]]:
+        print(f'max_tokens: {max_tokens}')
         """
         Generates completions for the provided prompts.
         """

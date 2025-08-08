@@ -154,8 +154,8 @@ def main():
     debug_root = Path("debug")
     debug_root.mkdir(parents=True, exist_ok=True)
     subset = train_dataset.shuffle(seed=42).select(range(min(50, len(train_dataset))))
-    train_subset = train_dataset.select(range(10000, 100000))
-    train_dataset = train_subset
+    # train_subset = train_dataset.select(range(3000, 10000))
+    # train_dataset = train_subset
 
     for idx, sample in enumerate(subset):
         folder = debug_root / f"sample_{idx}"
@@ -212,7 +212,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch_rl"
+    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch/full/sft"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -241,7 +241,7 @@ def main():
         num_iterations=2,
         beta=0.00,
         max_prompt_length=1024,
-        max_completion_length=4096,
+        max_completion_length=10000,
         # max_completion_length=19263,
         per_device_train_batch_size=6,
         per_device_eval_batch_size=6,
@@ -253,7 +253,7 @@ def main():
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=100,
+        save_steps=50,
         save_only_model=True,
         use_vllm=True,
         vllm_server_host=args.vllm_server_host,  # 多节点设置时替换为推理服务器的主机

@@ -62,9 +62,8 @@ Or
 
 ```
 CUDA_VISIBLE_DEVICES=4 nohup python -m agenttrain.inference.vllm_serve \
-  --model "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b/full/sft" \
+  --model "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch/full/sft" \
   --tensor_parallel_size 1 \
-  --max_model_len 8192 \
   --gpu_memory_utilization 0.95 \
   --enable_prefix_caching True \
   --host 0.0.0.0 \
