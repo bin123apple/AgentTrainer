@@ -145,7 +145,7 @@ class ToolEnv(MultiTurnEnv):
         try:
             # Check if we've hit max steps by counting tool uses in the message history
             step_count = self._get_step_count(messages)
-            if step_count > self.max_steps:
+            if step_count >= self.max_steps:
                 return True
             
             parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
@@ -397,7 +397,8 @@ class ToolEnv(MultiTurnEnv):
             return None, f"<|Tool_Error|>, Unsupported tool category: {category}", None, None
 
 
-    def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , images_offset: List[tuple], **kwargs: Any) -> Dict[str, Any]:
+    def env_response(self, messages: List[dict[str, Union[str, List[dict]]]], images: List[Image.Image] , 
+                     images_offset: List[tuple], tool_used: List,**kwargs: Any) -> Dict[str, Any]:
         try:
             # Find the target element from the first user message
             phrase = "please help me to identify the coordinate of the following element:"
@@ -414,12 +415,15 @@ class ToolEnv(MultiTurnEnv):
             # Determine which tool to call based on the last assistant message
             parsed = self.llm_parser.parse(messages[-1]["content"][0]["text"])
             if hasattr(parsed, 'crop') and parsed.crop is not None:
+                tool_used.append('crop')
                 category = 'crop'
                 tool_cmd = parsed.crop
             elif hasattr(parsed, 'find_color') and parsed.find_color is not None:
+                tool_used.append('find_color')
                 category = 'find_color'
                 tool_cmd = parsed.find_color
             elif hasattr(parsed, 'extract') and parsed.extract is not None:
+                tool_used.append('extract')
                 category = 'extract'
                 tool_cmd = parsed.extract
             else: # No valid tool command found

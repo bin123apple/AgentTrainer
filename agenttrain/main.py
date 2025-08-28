@@ -1,4 +1,4 @@
-from datasets import Dataset, load_from_disk
+from datasets import Dataset, load_from_disk, concatenate_datasets
 from trl import GRPOConfig, ModelConfig, ScriptArguments, TrlParser, get_peft_config
 import torch
 import io
@@ -30,10 +30,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # 新增 vLLM 服务器地址参数
     parser.add_argument(
-        '--vllm_server_host',
+        '--vllm_server_host', '--vllm-server-host',
+        dest='vllm_server_host',
         type=str,
         default='0.0.0.0',
-        help='Host/IP of the vLLM inference server (多节点时填实际服务器地址)'
+        help='Host/IP of the vLLM inference server'
     )
 
     return parser.parse_args()
@@ -125,7 +126,7 @@ def main():
     args = parse_args()
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/mnt/data1/home/lei00126/.cache/huggingface/hub/datasets--nuoxu1993--VG-RL-filter-dataset-hf/snapshots/5aadd29ae3bacbc378b1e5402458d683bea2f4a3"
+        PROCESSED_DATA_PATH = "/pscratch/sd/x/xu001536/.cache/huggingface/hub/datasets--nuoxu1993--VG-RL-filter-dataset-hf/snapshots/5f4f73f305177849caccb8de1dbbbd6075310975"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -154,8 +155,31 @@ def main():
     debug_root = Path("debug")
     debug_root.mkdir(parents=True, exist_ok=True)
     subset = train_dataset.shuffle(seed=42).select(range(min(50, len(train_dataset))))
-    # train_subset = train_dataset.select(range(3000, 10000))
-    # train_dataset = train_subset
+    # train_subset = train_dataset.select(range(0, 10000))
+    
+    
+    # # 第二个数据集路径
+    # PROCESSED_DATA_PATH_2 = "/pscratch/sd/x/xu001536/.cache/huggingface/hub/datasets--nuoxu1993--RLVG_bbox_High_Res_hf/snapshots/72ac83b15c9d8b3b9e24946d18ad45dc877ef056"
+    # dataset2 = load_processed_dataset(PROCESSED_DATA_PATH_2)
+
+    # train_subset = train_dataset.shuffle(seed=42).select(range(min(20_000, len(train_dataset))))
+    # ds2_part     = dataset2.shuffle(seed=43).select(range(min(20_000, len(dataset2))))
+
+    # # 1) 对齐两侧列（取公共列）
+    # common_cols = list(set(train_subset.column_names) & set(ds2_part.column_names))
+    # if not common_cols:
+    #     raise ValueError("两个数据集没有公共列，无法合并。")
+    # cols_to_drop = ["width", "height"]
+
+    # train_subset = train_subset.remove_columns([c for c in cols_to_drop if c in train_subset.column_names])
+    # ds2_part     = ds2_part.remove_columns([c for c in cols_to_drop if c in ds2_part.column_names])
+
+    # # # 2) 用参考集的 features 一次性 cast（自动把 int32→int64、Image 配置等对齐）
+    # # ds2_part = ds2_part.cast(train_subset.features)
+
+    # # 3) 合并并打乱
+    # mixed = concatenate_datasets([train_subset, ds2_part]).shuffle(seed=1234)
+    # train_dataset = mixed
 
     for idx, sample in enumerate(subset):
         folder = debug_root / f"sample_{idx}"
@@ -212,7 +236,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch/full/sft"
+    model_name = "/pscratch/sd/x/xu001536/.cache/huggingface/hub/models--Bin12345--qwen2_5vl_ui-tars-7b_2561_samples_1_epoch_sft/snapshots/728ef8a34d8f448a08dec32d1e6cd9e8cb492071"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -241,19 +265,20 @@ def main():
         num_iterations=2,
         beta=0.00,
         max_prompt_length=1024,
-        max_completion_length=10000,
+        max_completion_length=15000,
         # max_completion_length=19263,
         per_device_train_batch_size=6,
         per_device_eval_batch_size=6,
         num_generations=6,
         gradient_accumulation_steps=16,
         gradient_checkpointing=True,
+        loss_type="gspo",  # gspo or grpo
         eval_strategy="steps",
         eval_steps=10000,
         eval_accumulation_steps=1,
         eval_on_start=False,
         save_strategy="steps",
-        save_steps=50,
+        save_steps=20,
         save_only_model=True,
         use_vllm=True,
         vllm_server_host=args.vllm_server_host,  # 多节点设置时替换为推理服务器的主机

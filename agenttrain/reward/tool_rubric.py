@@ -111,10 +111,10 @@ class ToolRubric(Rubric):
             self.parser.get_format_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
-            0.3,
-            0.3,
-            0.03,
-            0.27,
+            0.7,
+            0.0,
+            0.2,
+            0.0,
             0.1,
         ] # correct_answer_reward_func will times get_format_reward_func later
 
@@ -184,8 +184,10 @@ class ToolRubric(Rubric):
                     # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
                     
                     # 4. 判断并打分
-                    reward = 1.0 if (x1 <= x <= x2 and y1 <= y <= y2) else 0.0
-                    # print(f"VG reward: {reward}.")
+                    if (x1 <= x <= x2) and (y1 <= y <= y2):
+                        reward = 1.0
+                    else:
+                        reward = 0.0
 
                 except Exception:
                     # print(f"Error parsing VG response: {raw}, reward set to 0.0.")

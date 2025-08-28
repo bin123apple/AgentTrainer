@@ -225,11 +225,11 @@ class XMLParser:
                         continue
                     
                     # Penalty for overly long think & tool content: proportional to excess length
-                    if len(content) > 512:
-                        excess = len(content) - 512
-                        # proportional penalty: scale by ratio of excess to max_think_len
-                        penalty = min((excess / 512) * 0.3, 0.3)
-                        raw_reward -= penalty
+                    if len(content) < 200:
+                        # excess = len(content) - 512
+                        # # proportional penalty: scale by ratio of excess to max_think_len
+                        # penalty = min((excess / 512) * 0.3, 0.3)
+                        raw_reward -= 0.5
                     
                     # Find earliest target tag start
                     tag_positions = []
