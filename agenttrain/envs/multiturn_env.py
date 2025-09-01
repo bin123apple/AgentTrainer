@@ -150,7 +150,7 @@ class MultiTurnEnv(Environment):
                 state['all_prompts'] = llm_response.prompt + clean_text + '<|im_end|>' # update all_prompts
             else:
                 self.env_response(state["messages"], state["images"], 
-                                  state["images_offset"], state['tool_used']) # call tools and add environment response
+                                  state["images_offset"]) # call tools and add environment response
 
             return j, state
 
@@ -200,7 +200,7 @@ class MultiTurnEnv(Environment):
         for m in prompts:
             img = bs64_image(m)
             state = {
-                'tool_used': [],
+                # 'tool_used': [],
                 "messages": m,
                 "all_prompts": "",
                 "completed": False,
@@ -219,14 +219,14 @@ class MultiTurnEnv(Environment):
         all_images = [s["images"] for s in states] # list[list[Image.Image]] 
         all_messages = [s["messages"] for s in states]
         all_images_offset = [s["images_offset"] for s in states] # list[list[Tuple[int, int]]] 
-        all_tool_used = [s["tool_used"] for s in states] # list[list[str]]
+        # all_tool_used = [s["tool_used"] for s in states] # list[list[str]]
         
         output = {
             "all_prompts": all_prompts,
             "images": all_images,
             "all_messages": all_messages,
             "images_offset": all_images_offset,
-            "all_tool_used": all_tool_used
+            # "all_tool_used": all_tool_used
         }
         return output
 

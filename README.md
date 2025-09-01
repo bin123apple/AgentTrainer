@@ -61,8 +61,8 @@ CUDA_VISIBLE_DEVICES=0 python -m agenttrain.inference.vllm_serve --model "Qwen/Q
 Or
 
 ```
-CUDA_VISIBLE_DEVICES=4 nohup python -m agenttrain.inference.vllm_serve \
-  --model "/mnt/data1/home/lei00126/LLaMA-Factory/saves/qwen2_5vl_ui-tars-7b_2561_samples_1_epoch/full/sft" \
+CUDA_VISIBLE_DEVICES=0 nohup python -m agenttrain.inference.vllm_serve \
+  --model "Bin12345/qwen2_5vl_venus_ground-7b_2561_1ep_sft" \
   --tensor_parallel_size 1 \
   --gpu_memory_utilization 0.95 \
   --enable_prefix_caching True \
@@ -78,12 +78,12 @@ CUDA_VISIBLE_DEVICES=5,6,7 accelerate launch --num-processes 3 --config-file age
 OR
 
 ```
-export CUDA_VISIBLE_DEVICES=5,6,7
+export CUDA_VISIBLE_DEVICES=1,2,3,4,5
 LOGDIR=logs/$(date +%Y%m%d_%H%M%S)
 mkdir -p "$LOGDIR"
 
 nohup accelerate launch \
-  --num_processes 3 \
+  --num_processes 5 \
   --config_file agenttrain/configs/zero3.yaml \
   --tee 3 \
   agenttrain/main.py \

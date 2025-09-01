@@ -371,7 +371,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             # tool_descriptions=CROP_TOOL_DESCRIPTION+EXTRACT_TOOL_DESCRIPTION,
             # tool_example=MERGE_TOOL_EXAMPLE
             # ) + f"\nNow Let's work on the real case:\n[Image_0 is displayed below]\nplease help me to identify the coordinate of the following element: \n{prompt}"
-            initial_prompts = EXTRACT_TOOL_PROMPT + f"please help me to identify the coordinate of the following element: \n{prompt}"
+            initial_prompts = TOOL_PROMPT + f"please help me to identify the coordinate of the following element: \n{prompt}"
             if image is not None:
                 buffered = io.BytesIO()
                 image.save(buffered, format="PNG")
@@ -498,8 +498,8 @@ class GRPOEnvTrainer(GRPOTrainer):
         inputs: List[Dict],
         all_images: List[Optional[Image.Image]],
         completion_messages: List[Dict],
-        all_messages: List[Dict],
-        all_tool_used: List,
+        # all_messages: List[Dict],
+        # all_tool_used: List,
         device: torch.device,
     ):
         """
@@ -582,61 +582,72 @@ class GRPOEnvTrainer(GRPOTrainer):
                 "reward_func_names 里缺少必要项："
                 f"{e}. 请确保同时包含 'correct_answer_reward_func' 和 'format_reward_func'。"
             )
+        # 两个布尔条件
+        is_correct = rewards_per_func[:, correct_idx] >= 1
+        has_good_format = rewards_per_func[:, format_idx] > 1.25
 
-        # 2) 基础正确性：两个条件同时满足
-        base_correct = (
-            (rewards_per_func[:, correct_idx] >= 1) &
-            (rewards_per_func[:, format_idx] >= 1.25)
-        )
+        # 逻辑与：两者都满足才为 True
+        correct_case_mask = torch.logical_and(is_correct, has_good_format)
 
-        # 3) 逐样本做额外过滤：
-        #    a) user 消息里是否包含 "<|Tool_Error|>"
-        #    b) all_tool_used 中是否包含 'find_color'
-        batch_size = rewards_per_func.size(0)
-        extra_ok = torch.ones(batch_size, dtype=torch.bool, device=device)
+        # # 2) 基础正确性：两个条件同时满足
+        # base_correct = (
+        #     (rewards_per_func[:, correct_idx] >= 1) &
+        #     (rewards_per_func[:, format_idx] >= 1.25)
+        # )
 
-        for i in range(batch_size):
-            # (a) 检查 user 消息是否含 Tool_Error
-            msgs = all_messages[i]
-            # 支持单条 dict 或 list[dict]
-            if isinstance(msgs, dict):
-                msgs = [msgs]
-            has_tool_error = False
-            for m in msgs:
-                if str(m.get("role", "")).lower() == "user":
-                    content_field = m.get("content", "")
+        # # 3) 逐样本做额外过滤：
+        # #    a) user 消息里是否包含 "<|Tool_Error|>"
+        # #    b) all_tool_used 中是否包含 'find_color'
+        # batch_size = rewards_per_func.size(0)
+        # extra_ok = torch.ones(batch_size, dtype=torch.bool, device=device)
 
-                    # 如果是 list[dict]，提取其中的 text
-                    if isinstance(content_field, list):
-                        content_texts = []
-                        for c in content_field:
-                            if isinstance(c, dict) and c.get("type") == "text":
-                                content_texts.append(str(c.get("text", "")))
-                        content_str = " ".join(content_texts)
-                    else:
-                        # 直接转成字符串
-                        content_str = str(content_field)
+        # for i in range(batch_size):
+        #     # (a) 检查 user 消息是否含 Tool_Error
+        #     msgs = all_messages[i]
+        #     # 支持单条 dict 或 list[dict]
+        #     if isinstance(msgs, dict):
+        #         msgs = [msgs]
+        #     has_tool_error = False
+        #     for m in msgs:
+        #         if str(m.get("role", "")).lower() == "user":
+        #             content_field = m.get("content", "")
 
-                    if "<|Tool_Error|>" in content_str or '<|Format_Error|>' in content_str:
-                        has_tool_error = True
-                        if self.debug:
-                            print(f"[sample {i}] Tool_Error found in user message: {content_str}")
-                        break
+        #             # 如果是 list[dict]，提取其中的 text
+        #             if isinstance(content_field, list):
+        #                 content_texts = []
+        #                 for c in content_field:
+        #                     if isinstance(c, dict) and c.get("type") == "text":
+        #                         content_texts.append(str(c.get("text", "")))
+        #                 content_str = " ".join(content_texts)
+        #             else:
+        #                 # 直接转成字符串
+        #                 content_str = str(content_field)
 
-            # (b) 检查是否使用了 find_color（不区分大小写）
-            tools_i = all_tool_used[i] or []
-            has_find_color = any(str(t).strip().lower() == "find_color" for t in tools_i)
-            has_crop = any(str(t).strip().lower() == "crop" for t in tools_i)
+        #             if "<|Tool_Error|>" in content_str or '<|Format_Error|>' in content_str:
+        #                 has_tool_error = True
+        #                 if self.debug:
+        #                     print(f"[sample {i}] Tool_Error found in user message: {content_str}")
+        #                 break
 
-            # 任一触发则该样本无效
-            if has_tool_error or has_find_color or has_crop:
-                extra_ok[i] = False
+        #     # (b) 检查是否使用了 find_color（不区分大小写）
+        #     # tools_i = all_tool_used[i] or []
+        #     # has_find_color = any(str(t).strip().lower() == "find_color" for t in tools_i)
+        #     # has_crop = any(str(t).strip().lower() == "crop" for t in tools_i)
 
-        # 4) 综合条件：正确且通过额外过滤
-        is_correct = torch.logical_and(base_correct, extra_ok)
+        #     # 任一触发则该样本无效
+        #     # if has_tool_error or has_find_color or has_crop:
+        #     if has_tool_error:
+        #         extra_ok[i] = False
+
+        # # 4) 综合条件：正确且通过额外过滤
+        # is_correct = torch.logical_and(base_correct, extra_ok)
 
         # 从正确样本中，按“形式”每类随机取 1 个组成 SFT 子集
-        correct_indices = is_correct.nonzero(as_tuple=False).view(-1).tolist()
+        # correct_indices = is_correct.nonzero(as_tuple=False).view(-1).tolist()
+        # correct_case_mask = torch.zeros(rewards_per_func.size(0), dtype=torch.bool, device=device)
+
+        # if len(correct_indices) > 0:
+        #     correct_case_mask[torch.tensor(correct_indices, device=device, dtype=torch.long)] = True
         # selected_indices = uniform_sample_correct_indices(
         #     correct_indices=correct_indices,
         #     all_tool_used=all_tool_used,          # <- 作为函数输入已提供
@@ -670,7 +681,7 @@ class GRPOEnvTrainer(GRPOTrainer):
         weights = torch.tensor(self.reward_weights, device=device).unsqueeze(0)  # (1, num_funcs)
         final_rewards = (rewards_per_func * weights).nansum(dim=1)               # (world_batch_size,)
 
-        return final_rewards, correct_indices
+        return final_rewards, correct_case_mask
 
     def _generate_and_score_completions(self, inputs: dict[str, Union[torch.Tensor, Any]]):
         '''
@@ -743,7 +754,7 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_images = env_result['images'] # calculate log_pb
             all_messages = env_result['all_messages'] # calculate rewards
             all_images_offset = env_result['images_offset'] # calculate rewards
-            all_tool_used = env_result['all_tool_used'] # evenly selected tools
+            # all_tool_used = env_result['all_tool_used'] # evenly selected tools
             
             for dialog in env_result["all_messages"]:
                 
@@ -770,20 +781,20 @@ class GRPOEnvTrainer(GRPOTrainer):
             all_images = [None] * len(all_multimodal_inputs)
             all_messages = [None] * len(all_multimodal_inputs)
             all_images_offset = [None] * len(all_multimodal_inputs)
-            all_tool_used = [None] * len(all_multimodal_inputs)
+            # all_tool_used = [None] * len(all_multimodal_inputs)
 
         all_prompts = broadcast_object_list(all_prompts, from_process=0)
         all_images = broadcast_object_list(all_images, from_process=0)
         all_messages = broadcast_object_list(all_messages, from_process=0)
         all_images_offset = broadcast_object_list(all_images_offset, from_process=0)
-        all_tool_used = broadcast_object_list(all_tool_used, from_process=0)
+        # all_tool_used = broadcast_object_list(all_tool_used, from_process=0)
 
         process_slice = slice(
             self.accelerator.process_index * len(prompts),
             (self.accelerator.process_index + 1) * len(prompts),
         ) # len(prompts) 是每个进程的本地 batch 大小
         # Back to each process's local batch size
-        all_completions = all_messages # For correctness calculation
+        # all_completions = all_messages # For correctness calculation
         all_prompts = all_prompts[process_slice]
         all_images = all_images[process_slice]
         all_messages = all_messages[process_slice]
@@ -795,11 +806,15 @@ class GRPOEnvTrainer(GRPOTrainer):
             {"task": "vg", "answer": ans, "all_images_offset": off}
             for ans, off in zip(answers, all_images_offset)
         ]
+        # rewards, correct_case_mask  = self.compute_rewards(questions = prompts, inputs = inputs, 
+        #                                all_images = all_images, 
+        #                                completion_messages = all_messages, 
+        #                                all_messages = all_completions,
+        #                                all_tool_used = all_tool_used,
+        #                                device = device)
         rewards, correct_case_mask  = self.compute_rewards(questions = prompts, inputs = inputs, 
                                        all_images = all_images, 
                                        completion_messages = all_messages, 
-                                       all_messages = all_completions,
-                                       all_tool_used = all_tool_used,
                                        device = device)
         # print(f"Rewards computed: {rewards}, shape: {rewards.shape}")
         rewards = rewards[process_slice] 
@@ -1309,34 +1324,6 @@ class GRPOEnvTrainer(GRPOTrainer):
         # ====================================================================
         #               <<< 新增：正确样本的 SFT 交叉熵 >>> 
         # ====================================================================
-        # case_weights = inputs.get("chunk_correct_case_mask", None)
-
-        # if case_weights is not None and case_weights.any():
-        #     # 1) 只取出选中样本
-        #     selected = case_weights > 0
-        #     logps_selected      = per_token_logps[selected]      # (B_s, L)
-        #     token_mask_selected = completion_mask[selected]      # (B_s, L)
-        #     weights_selected    = case_weights[selected]         # (B_s,)
-
-        #     # 2) 逐样本 CE
-        #     nll = -logps_selected                               # (B_s, L)
-        #     per_sample_ce = (nll * token_mask_selected).sum(dim=1) / token_mask_selected.sum(dim=1).clamp(min=1.0)  # (B_s,)
-
-        #     # 3) 加权平均 CE
-        #     sft_loss = (per_sample_ce * weights_selected).sum() / weights_selected.sum().clamp(min=1.0)
-        # else:
-        #     sft_loss = torch.tensor(0.0, device=loss.device)
-        # if self.debug:
-        #     print(f'sft_loss:{sft_loss}')
-        
-        # # 4) 融合：总 loss = RL + λ · SFT
-        # lam = getattr(self, "lambda_sft", 1)      # 可写进 config
-        # loss = loss + lam * sft_loss
-
-        # self.debug = False # Disable debug after the first batch  
-            
-        # return loss
-
         correct_mask = inputs.get("chunk_correct_case_mask", None)
         if self.debug:
             print(f'correct_mask:{correct_mask}')
@@ -1363,3 +1350,30 @@ class GRPOEnvTrainer(GRPOTrainer):
         self.debug = False # Disable debug after the first batch  
             
         return loss
+
+        # correct_mask = inputs.get("chunk_correct_case_mask", None)
+        # if self.debug:
+        #     print(f'correct_mask:{correct_mask}')
+        # if correct_mask is not None and correct_mask.any():
+        #     # 1) 只取正确样本
+        #     logps_correct      = per_token_logps[correct_mask]          # (B_c, L)
+        #     token_mask_correct = completion_mask[correct_mask]          # (B_c, L)
+
+        #     # 2) token‑level NLL = −log p
+        #     nll = -logps_correct                                        # (B_c, L)
+
+        #     # 3) 只在 completion 区域求平均交叉熵
+        #     sft_loss = (nll * token_mask_correct).sum() / token_mask_correct.sum().clamp(min=1.0)
+        # else:
+        #     # 若本 batch 没有正确样本，SFT‑loss 置 0，不影响梯度
+        #     sft_loss = torch.tensor(0.0, device=loss.device)
+        # if self.debug:
+        #     print(f'sft_loss:{sft_loss}')
+        
+        # # 4) 融合：总 loss = RL + λ · SFT
+        # lam = getattr(self, "lambda_sft", 1)      # 可写进 config
+        # loss = loss + lam * sft_loss
+
+        # self.debug = False # Disable debug after the first batch  
+            
+        # return loss

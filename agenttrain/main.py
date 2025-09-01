@@ -126,7 +126,7 @@ def main():
     args = parse_args()
     # 1. 加载预处理数据
     try:
-        PROCESSED_DATA_PATH = "/pscratch/sd/x/xu001536/.cache/huggingface/hub/datasets--nuoxu1993--VG-RL-filter-dataset-hf/snapshots/5f4f73f305177849caccb8de1dbbbd6075310975"
+        PROCESSED_DATA_PATH = "/home/uconn/.cache/huggingface/hub/datasets--nuoxu1993--VG-RL-filter-dataset-hf/snapshots/5f4f73f305177849caccb8de1dbbbd6075310975"
         dataset = load_processed_dataset(PROCESSED_DATA_PATH)
     except Exception as e:
         print(f"加载数据失败: {e}")
@@ -228,7 +228,7 @@ def main():
         system_prompt=CROP_SYSTEM_PROMPT,
         few_shot=[],
         tools=[crop],
-        max_steps=5
+        max_steps=3
     )
     
     print("System Prompt:")
@@ -236,7 +236,7 @@ def main():
     
     # 4. 加载模型
     print("4. 加载模型...")
-    model_name = "/pscratch/sd/x/xu001536/.cache/huggingface/hub/models--Bin12345--qwen2_5vl_ui-tars-7b_2561_samples_1_epoch_sft/snapshots/728ef8a34d8f448a08dec32d1e6cd9e8cb492071"
+    model_name = "Bin12345/qwen2_5vl_venus_ground-7b_2561_1ep_sft"
     # model_name = "/mnt/data1/home/lei00126/AgentTrainer/outputs/VG-grpo_qwen2_5vl-7b-vg-sft-2633-steps/checkpoint-4400"
     # model, tokenizer = get_model_and_tokenizer(
     #     model_name, 
@@ -272,7 +272,7 @@ def main():
         num_generations=6,
         gradient_accumulation_steps=16,
         gradient_checkpointing=True,
-        loss_type="gspo",  # gspo or grpo
+        loss_type="grpo",  # gspo or grpo
         eval_strategy="steps",
         eval_steps=10000,
         eval_accumulation_steps=1,

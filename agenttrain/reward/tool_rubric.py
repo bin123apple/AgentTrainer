@@ -111,9 +111,9 @@ class ToolRubric(Rubric):
             self.parser.get_format_reward_func(),
         ] # TODO: add tool feedbacks here.
         self.reward_weights = [
-            0.7,
-            0.0,
-            0.2,
+            0.47,
+            0.4,
+            0.03,
             0.0,
             0.1,
         ] # correct_answer_reward_func will times get_format_reward_func later
@@ -183,9 +183,33 @@ class ToolRubric(Rubric):
                     x1, y1, x2, y2 = box
                     # print(f"Ground-truth box: ({x1}, {y1}), ({x2}, {y2}).")
                     
-                    # 4. 判断并打分
+                    # # 4. 判断并打分
+                    # if (x1 <= x <= x2) and (y1 <= y <= y2):
+                    #     reward = 1.0
+                    # else:
+                    #     reward = 0.0
+                    
+                    # 4. 判断并打分（命中=1，中心最高到1.2 的 dense 奖励）
                     if (x1 <= x <= x2) and (y1 <= y <= y2):
-                        reward = 1.0
+                        # 框中心与半宽/半高
+                        cx = (x1 + x2) / 2.0
+                        cy = (y1 + y2) / 2.0
+                        half_w = max(1e-6, (x2 - x1) / 2.0)
+                        half_h = max(1e-6, (y2 - y1) / 2.0)
+
+                        # 归一化到 [0,1] 的相对距离：中心=0，边界=1
+                        nx = abs(x - cx) / half_w
+                        ny = abs(y - cy) / half_h
+                        d = max(nx, ny)                   # Chebyshev，确保边界=1、角点也=1
+                        d = min(1.0, max(0.0, d))         # 数值安全
+
+                        # 越近中心越高的“接近度”closeness：中心=1，边界=0
+                        closeness = 1.0 - d
+
+                        # 形状控制：gamma=1 线性；>1 中心加分更陡；<1 更平滑
+                        gamma = 1.0
+                        bonus_max = 0.2                   # 中心最多 +0.2
+                        reward = 1.0 + bonus_max * (closeness ** gamma)
                     else:
                         reward = 0.0
 
